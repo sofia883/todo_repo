@@ -447,59 +447,54 @@ class _TodoListState extends State<TodoList> {
             titleController.clear();
           });
         }
-
       },
     );
-  }Widget _buildTodoItem(int index) {
-  final todo = todos[index];
-  return Material(
-    color: Colors.transparent,
-    child: InkWell(
-      onTap: () {
-        setState(() {
-          todo.isCompleted = !todo.isCompleted;
-          todo.completedAt = todo.isCompleted ? DateTime.now() : null;
-        });
-      },
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ... existing Container and Text code ...
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    todo.text,
-                    style: TextStyle(
-                      decoration:
-                          todo.isCompleted ? TextDecoration.lineThrough : null,
-                      color: todo.isCompleted
-                          ? Colors.pink[400]
-                          : Colors.pink[900],
-                    ),
+  }
+
+  Widget _buildTodoItem(int index) {
+    final todo = todos[index];
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            todo.isCompleted = !todo.isCompleted;
+            todo.completedAt = todo.isCompleted ? DateTime.now() : null;
+          });
+        },
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                margin: EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: todo.isCompleted
+                        ? Colors.pink[400]!
+                        : Colors.pink[200]!,
                   ),
-                  SizedBox(height: 4),
-                  Text(
-                    '${_formatDateTime(todo.createdAt)}',
-                    style: TextStyle(
-                      color: Colors.pink[300],
-                      fontSize: 12,
-                    ),
-                  ),
-                  if (todo.isCompleted)
-                    Text(
-                      'Completed ${_formatDateTime(todo.completedAt!)}',
-                      style: TextStyle(
-                        color: Colors.green[300],
-                        fontSize: 12,
-                      ),
-                    ),
-                ],
+                  color:
+                      todo.isCompleted ? Colors.pink[400] : Colors.transparent,
+                ),
+                child: Center(
+                  child: todo.isCompleted
+                      ? Icon(Icons.check, size: 16, color: Colors.white)
+                      : Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            color: Colors.pink[300],
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                ),
               ),
-            ),
               Expanded(
                 child: Text(
                   todo.text,
@@ -523,8 +518,6 @@ class _TodoListState extends State<TodoList> {
       ),
     );
   }
-
-// Add this helper method to _TodoListState class
 
   Widget _buildNewTodoField(
       int index, DateTime createdTime, DateTime? completedTime) {
@@ -576,42 +569,6 @@ class _TodoListState extends State<TodoList> {
                   _addNewTodo(value);
                 },
               ),
-            ),
-            // Show Created and Completed time on the right
-            Row(
-              children: [
-                // Created time icon and label
-                if (createdTime != null)
-                  Row(
-                    children: [
-                      Icon(Icons.create, size: 16, color: Colors.pink[300]),
-                      SizedBox(width: 4),
-                      Text(
-                        _formatDateTime(createdTime),
-                        style: TextStyle(
-                          color: Colors.pink[300],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                // Completed time icon and label (if exists)
-                if (completedTime != null)
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle,
-                          size: 16, color: Colors.green[300]),
-                      SizedBox(width: 4),
-                      Text(
-                        _formatDateTime(completedTime),
-                        style: TextStyle(
-                          color: Colors.green[300],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
             ),
             IconButton(
               icon: Icon(Icons.add, color: Colors.pink[300]),
