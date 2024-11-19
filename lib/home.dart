@@ -365,6 +365,10 @@ class _TodoListState extends State<TodoList> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
+          if (newTodoController.text.trim().isNotEmpty) {
+            _addNewTodo(newTodoController.text);
+          }
+
           Navigator.pop(
             context,
             TodoListData(
