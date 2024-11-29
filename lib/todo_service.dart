@@ -1,38 +1,42 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+
 class TodoItem {
   String text;
   bool isCompleted;
   DateTime createdAt;
   DateTime? completedAt;
-  bool isExpanded; // Add this new property
+  bool isDetailsExpanded;
 
   TodoItem({
     required this.text,
     this.isCompleted = false,
     required this.createdAt,
     this.completedAt,
-    this.isExpanded = false, // Initialize it as false by default
+    this.isDetailsExpanded = false,
   });
 
-  // If you have toJson and fromJson methods, update them too:
-  Map<String, dynamic> toJson() => {
-        'text': text,
-        'isCompleted': isCompleted,
-        'createdAt': createdAt.toIso8601String(),
-        'completedAt': completedAt?.toIso8601String(),
-        'isExpanded': isExpanded,
-      };
+  factory TodoItem.fromJson(Map<String, dynamic> json) {
+    return TodoItem(
+      text: json['text'],
+      isCompleted: json['isCompleted'] ?? false,
+      createdAt: DateTime.parse(json['createdAt']),
+      completedAt: json['completedAt'] != null
+          ? DateTime.parse(json['completedAt'])
+          : null,
+      isDetailsExpanded: json['isDetailsExpanded'] ?? false, // Default value
+    );
+  }
 
-  factory TodoItem.fromJson(Map<String, dynamic> json) => TodoItem(
-        text: json['text'],
-        isCompleted: json['isCompleted'],
-        createdAt: DateTime.parse(json['createdAt']),
-        completedAt: json['completedAt'] != null 
-            ? DateTime.parse(json['completedAt'])
-            : null,
-        isExpanded: json['isExpanded'] ?? false,
-      );
+  Map<String, dynamic> toJson() {
+    return {
+      'text': text,
+      'isCompleted': isCompleted,
+      'createdAt': createdAt.toIso8601String(),
+      'completedAt': completedAt?.toIso8601String(),
+      'isDetailsExpanded': isDetailsExpanded,
+    };
+  }
 }
 
 // Model class for TodoListData

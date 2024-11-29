@@ -287,10 +287,9 @@ class _TodoListState extends State<TodoList> {
   Widget buildTodoItem(int index) {
     final todo = todos[index];
     double progress = todo.isCompleted
-        ? 1.0 // If completed, progress is 100%
+        ? 1.0
         : (DateTime.now().difference(todo.createdAt).inMinutes / 1440)
             .clamp(0.0, 1.0);
-    bool _isDetailsExpanded = false;
 
     return StatefulBuilder(
       builder: (context, setState) {
@@ -311,13 +310,9 @@ class _TodoListState extends State<TodoList> {
                       todo.isCompleted = !todo.isCompleted;
                       todo.completedAt =
                           todo.isCompleted ? DateTime.now() : null;
-
-                      // Trigger a rebuild of the parent widget to update the counter
-                      // This will ensure the completion counter updates
                       this.setState(() {});
                     });
 
-                    // Save the updated state
                     final updatedList = TodoListData(
                       title: titleController.text,
                       todos: todos,
@@ -334,7 +329,6 @@ class _TodoListState extends State<TodoList> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Checkbox for Completion
                         AnimatedContainer(
                           duration: Duration(milliseconds: 300),
                           curve: Curves.easeInOut,
@@ -345,13 +339,11 @@ class _TodoListState extends State<TodoList> {
                             shape: BoxShape.circle,
                             color: todo.isCompleted
                                 ? Colors.pink[400]
-                                : Colors
-                                    .transparent, // Filled circle when completed
+                                : Colors.transparent,
                             border: todo.isCompleted
-                                ? null // No border when completed
+                                ? null
                                 : Border.all(
-                                    color: Colors.pink[
-                                        200]!, // Border color when not completed
+                                    color: Colors.pink[200]!,
                                     width: 1,
                                   ),
                           ),
@@ -359,13 +351,10 @@ class _TodoListState extends State<TodoList> {
                               ? Icon(
                                   Icons.check,
                                   size: 16,
-                                  color: Colors
-                                      .white, // Check icon with white color inside the filled circle
+                                  color: Colors.white,
                                 )
-                              : Container(), // Empty container when not completed
+                              : Container(),
                         ),
-
-                        // Todo Text
                         Expanded(
                           child: AnimatedDefaultTextStyle(
                             duration: Duration(milliseconds: 300),
@@ -381,17 +370,16 @@ class _TodoListState extends State<TodoList> {
                             child: Text(todo.text),
                           ),
                         ),
-                        // Dropdown/Expand Icon
                         IconButton(
                           icon: Icon(
-                            _isDetailsExpanded
+                            todo.isDetailsExpanded!
                                 ? Icons.arrow_drop_up
                                 : Icons.arrow_drop_down,
                             color: Colors.pink[400],
                           ),
                           onPressed: () {
                             setState(() {
-                              _isDetailsExpanded = !_isDetailsExpanded;
+                              todo.isDetailsExpanded = !todo.isDetailsExpanded!;
                             });
                           },
                         ),
@@ -399,22 +387,19 @@ class _TodoListState extends State<TodoList> {
                     ),
                   ),
                 ),
-                // Dropdown Details
-                if (_isDetailsExpanded)
+                if (todo.isDetailsExpanded!)
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       children: [
                         Row(
                           children: [
-                            // Created Time
                             Text(
                               _formatDateTime(todo.createdAt),
                               style: TextStyle(
                                   color: Colors.grey[700], fontSize: 12),
                             ),
                             Spacer(),
-                            // Completed Time or Placeholder
                             Text(
                               todo.completedAt != null
                                   ? _formatDateTime(todo.completedAt!)
@@ -424,7 +409,6 @@ class _TodoListState extends State<TodoList> {
                             ),
                           ],
                         ),
-                        // Slider for Progress
                         SliderTheme(
                           data: SliderThemeData(
                             thumbShape:
@@ -435,19 +419,11 @@ class _TodoListState extends State<TodoList> {
                             value: progress,
                             min: 0.0,
                             max: 1.0,
-                            onChanged:
-                                null, // Make it completely non-interactive
-                            activeColor: todo.isCompleted
-                                ? Colors
-                                    .pink[600] // Different color when completed
-                                : Colors.pink[400],
-                            inactiveColor: todo.isCompleted
-                                ? Colors.pink[
-                                    200] // Different inactive color when completed
-                                : Colors.pink[100],
+                            onChanged: (_) {},
+                            activeColor: Colors.pink[400],
+                            inactiveColor: Colors.pink[100],
                           ),
                         ),
-                        // Delete Icon
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
