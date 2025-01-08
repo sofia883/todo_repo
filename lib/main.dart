@@ -14,7 +14,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.pink,
         scaffoldBackgroundColor: Color(0xFFFCE4EC),
       ),
-      home: HomePage(),
+      home: TodoList(),
     );
   }
 }

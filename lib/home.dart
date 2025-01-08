@@ -1,323 +1,681 @@
 import 'package:flutter/material.dart';
-import 'todo_screen.dart';
 import 'todo_service.dart';
 
-class HomePage extends StatefulWidget {
+class TodoList extends StatefulWidget {
+  final TodoListData? existingTodoList;
+  final TodoListData? todoListData;
+
+  const TodoList({this.todoListData, this.existingTodoList});
+
   @override
-  _HomePageState createState() => _HomePageState();
+  _TodoListState createState() => _TodoListState();
 }
 
-class _HomePageState extends State<HomePage> {
-  List<TodoListData> todoLists = [];
-  late TextEditingController titleController;
-  bool isTitleEditing = false;
+class _TodoListState extends State<TodoList> {
+  late List<TodoItem> todos;
+  late DateTime selectedDate;
+  late DateTime displayedMonth;
+  late String currentCategory;
+  late Color currentCategoryColor;
+  final TextEditingController newTodoController = TextEditingController();
+  final FocusNode _newTodoFocus = FocusNode();
+  bool isCurrentLineEmpty = true;
+  final ScrollController _calendarScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _loadSavedTodoLists();
-  }
-
-  Future<void> _loadSavedTodoLists() async {
-    final savedLists = await TodoStorage.loadTodoLists();
-    setState(() {
-      todoLists = savedLists;
-    });
-  }
-
-  Future<void> _saveTodoLists() async {
-    await TodoStorage.saveTodoLists(todoLists);
+    todos = widget.existingTodoList?.todos ?? [];
+    selectedDate = DateTime.now();
+    displayedMonth = DateTime.now();
+    currentCategory = widget.todoListData?.category ?? 'Personal';
+    currentCategoryColor = widget.todoListData?.categoryColor ?? Colors.indigo;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: Text('My Todo Lists'),
-          backgroundColor: Colors.pink[100],
-          elevation: 0,
-        ),
-        // Add a gradient background
-        body: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.pink[50]!,
-                Colors.pink[100]!,
-              ],
-            ),
-          ),
-          child: GridView.builder(
-            padding: EdgeInsets.all(16),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 0.8,
-            ),
-            itemCount: todoLists.length + 1, // +1 for the "Add" button
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return _buildAddButton();
-              }
-              return _buildTodoCard(todoLists[index - 1]);
-            },
-          ),
-        ));
-  }
-
-  Widget _buildAddButton() {
-    return InkWell(
-      onTap: () async {
-        final result = await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => TodoList()),
-        );
-        if (result != null && result.todos.isNotEmpty) {
-          setState(() {
-            todoLists.add(result);
-          });
-          await _saveTodoLists(); // Save after adding new list
-        }
-      },
-      child: Card(
-        elevation: 4,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: SizedBox(
-          height: 80, // Reduced height for the add button
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.edit_note_rounded,
-                size: 48,
-                color: Colors.pink[300],
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Quick Add',
-                style: TextStyle(
-                  color: Colors.pink[300],
-                  fontSize: 14, // Reduced font size
-                  fontWeight: FontWeight.bold,
+      backgroundColor: Colors.grey[100],
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildMonthYearSelector(),
+            _buildCalendar(),
+            _buildTaskTabs(),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
                 ),
+                child: _buildTaskList(),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddTaskDialog(),
+        backgroundColor: currentCategoryColor,
+        child: Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildTodoCard(TodoListData todoList) {
-    return InkWell(
-      onTap: () async {
-        final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => TodoList(
-                existingTodoList: todoList,
-                todoListData: TodoListData(
-                  category: todoList.category,
-                  categoryColor: todoList.categoryColor,
-                  title: todoList.title,
-                  todos: todoList.todos,
-                ),
+  Widget _buildTaskTabs() {
+    return Padding(
+      padding: EdgeInsets.all(16),
+      child: Row(
+        children: [
+          _buildTab('All tasks', true),
+          SizedBox(width: 16),
+          _buildTab('My tasks', false),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTab(String text, bool isSelected) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: isSelected
+            ? [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 5)]
+            : null,
+      ),
+      child: Row(
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.black : Colors.grey,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          if (isSelected) ...[
+            SizedBox(width: 4),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: currentCategoryColor,
+                borderRadius: BorderRadius.circular(10),
               ),
-            ));
-        if (result != null) {
-          setState(() {
-            int index = todoLists.indexOf(todoList);
-            todoLists[index] = result;
-          });
-          await _saveTodoLists();
-        }
-      },
-      onLongPress: () async {
-        await showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Choose an option'),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showDeleteConfirmation(todoList);
-                  },
-                  child: Text('Delete'),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    setState(() {
-                      for (var todo in todoList.todos) {
-                        todo.isCompleted = true;
-                        todo.completedAt = DateTime.now();
-                      }
-                    });
-                    await _saveTodoLists();
-                    Navigator.pop(context);
-                  },
-                  child: Text('Mark All Completed'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-      child: Card(
-        elevation: 4,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                todoList.title.isNotEmpty ? todoList.title : 'Untitled',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color:
-                      todoList.categoryColor, // Use the list's category color
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Text(
+                '${todos.length}',
+                style: TextStyle(color: Colors.white, fontSize: 12),
               ),
-              SizedBox(height: 8),
-              Expanded(
-                child: ListView.builder(
-                  physics: NeverScrollableScrollPhysics(),
-                  itemCount: _getPreviewItemCount(todoList.todos),
-                  itemBuilder: (context, index) {
-                    if (index < 2) {
-                      return Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4),
+            ),
+          ],
+        ],
+      ),
+    );
+  }void _showAddTaskDialog() {
+  final TextEditingController titleController = TextEditingController();
+  final TextEditingController descriptionController = TextEditingController();
+  DateTime selectedDueDate = DateTime.now();
+  TimeOfDay? selectedDueTime;
+  String selectedDateType = 'today'; // 'today', 'tomorrow', 'custom'
+
+  showDialog(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Add task',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+                
+                // Title Field
+                TextField(
+                  controller: titleController,
+                  decoration: InputDecoration(
+                    labelText: 'Task Title',
+                    hintText: 'Enter task title',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    prefixIcon: Icon(Icons.task_alt),
+                  ),
+                ),
+                SizedBox(height: 16),
+                
+                // Description Field
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Description',
+                    hintText: 'Enter task description',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    prefixIcon: Icon(Icons.description),
+                  ),
+                ),
+                SizedBox(height: 16),
+
+                // Date Selection
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Text(
+                          'Due Date',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      // Quick Date Options
+                      Row(
+                        children: [
+                          _buildDateOption(
+                            'Today',
+                            selectedDateType == 'today',
+                            () => setState(() {
+                              selectedDateType = 'today';
+                              selectedDueDate = DateTime.now();
+                            }),
+                          ),
+                          _buildDateOption(
+                            'Tomorrow',
+                            selectedDateType == 'tomorrow',
+                            () => setState(() {
+                              selectedDateType = 'tomorrow';
+                              selectedDueDate = DateTime.now().add(Duration(days: 1));
+                            }),
+                          ),
+                          _buildDateOption(
+                            'Custom',
+                            selectedDateType == 'custom',
+                            () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDueDate,
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime(2025),
+                              );
+                              if (picked != null) {
+                                setState(() {
+                                  selectedDateType = 'custom';
+                                  selectedDueDate = picked;
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      
+                      // Selected Date Display
+                      Padding(
+                        padding: EdgeInsets.all(8),
                         child: Row(
                           children: [
-                            Container(
-                              width: 14, // Smaller circle size
-                              height: 14, // Smaller circle size
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: todoList.todos[index].isCompleted
-                                      ? Colors.pink[400]!
-                                      : Colors.pink[200]!,
-                                ),
-                                color: todoList.todos[index].isCompleted
-                                    ? Colors.pink[400]
-                                    : Colors.transparent,
-                              ),
-                              child: todoList.todos[index].isCompleted
-                                  ? Icon(Icons.check,
-                                      size: 10, color: Colors.white)
-                                  : null,
-                            ),
+                            Icon(Icons.calendar_today, size: 20, color: currentCategoryColor),
                             SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                todoList.todos[index].text,
-                                style: TextStyle(
-                                  decoration: todoList.todos[index].isCompleted
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                                  color: todoList.todos[index].isCompleted
-                                      ? Colors.pink[400]
-                                      : Colors.pink[900],
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            Text(
+                              '${selectedDueDate.day}/${selectedDueDate.month}/${selectedDueDate.year}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: currentCategoryColor,
                               ),
                             ),
                           ],
                         ),
-                      );
-                    } else if (index == 2 && todoList.todos.length > 2) {
-                      // Calculate remaining todos
-                      int remainingTodos = todoList.todos.length - 2;
-                      return Padding(
-                        padding: EdgeInsets.only(
-                            top: 16, left: 4), // Added padding to create space
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '+$remainingTodos more',
-                            style: TextStyle(
-                              color: Colors.pink[300],
-                              fontSize: 14, // Reduced font size
-                              fontWeight: FontWeight.bold,
-                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 16),
+
+                // Time Selection
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Text(
+                          'Due Time (Optional)',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      );
-                    }
-                    return SizedBox();
-                  },
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.access_time),
+                        title: Text(
+                          selectedDueTime != null
+                              ? '${selectedDueTime!.format(context)}'
+                              : 'Set time',
+                        ),
+                        trailing: selectedDueTime != null
+                            ? IconButton(
+                                icon: Icon(Icons.clear),
+                                onPressed: () => setState(() => selectedDueTime = null),
+                              )
+                            : null,
+                        onTap: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay.now(),
+                          );
+                          if (picked != null) {
+                            setState(() => selectedDueTime = picked);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                SizedBox(height: 24),
+
+                // Add Task Button
+                ElevatedButton(
+                  onPressed: () {
+                    if (titleController.text.trim().isNotEmpty) {
+                      setState(() {
+                        todos.add(TodoItem(
+                          title: titleController.text.trim(),
+                          description: descriptionController.text.trim(),
+                          createdAt: DateTime.now(),
+                          dueDate: selectedDueDate,
+                          dueTime: selectedDueTime,
+                        ));
+                      });
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      'Add Task',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: currentCategoryColor,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+      ),
+    ),
+  );
+}
+
+Widget _buildDateOption(String text, bool isSelected, VoidCallback onTap) {
+  return Expanded(
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: EdgeInsets.all(8),
+        padding: EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? currentCategoryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? currentCategoryColor : Colors.grey[300]!,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.grey[600],
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+  Widget _buildMonthYearSelector() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Month Dropdown
+          PopupMenuButton<DateTime>(
+            child: Row(
+              children: [
+                Text(
+                  '${_getMonthName(displayedMonth.month)} ${displayedMonth.year}',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down),
+              ],
+            ),
+            onSelected: (DateTime date) {
+              setState(() {
+                displayedMonth = date;
+                selectedDate = date;
+              });
+            },
+            itemBuilder: (BuildContext context) {
+              return List.generate(12, (index) {
+                final month = DateTime(displayedMonth.year, index + 1);
+                return PopupMenuItem<DateTime>(
+                  value: month,
+                  child: Text(_getMonthName(month.month)),
+                );
+              });
+            },
+          ),
+          // Year Dropdown
+          PopupMenuButton<int>(
+            child: Row(
+              children: [
+                Text(
+                  '${displayedMonth.year}',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down),
+              ],
+            ),
+            onSelected: (int year) {
+              setState(() {
+                displayedMonth = DateTime(year, displayedMonth.month);
+                selectedDate =
+                    DateTime(year, displayedMonth.month, selectedDate.day);
+              });
+            },
+            itemBuilder: (BuildContext context) {
+              final currentYear = DateTime.now().year;
+              return List.generate(5, (index) {
+                final year = currentYear - 2 + index;
+                return PopupMenuItem<int>(
+                  value: year,
+                  child: Text('$year'),
+                );
+              });
+            },
+          ),
+        ],
       ),
     );
   }
 
-  int _getPreviewItemCount(List<TodoItem> todos) {
-    if (todos.isEmpty) return 0;
-    return todos.length > 2 ? 3 : todos.length;
+  String _getMonthName(int month) {
+    const monthNames = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
+    ];
+    return monthNames[month - 1];
   }
 
-  Future<void> _showDeleteConfirmation(TodoListData todoList) async {
-    // Check if there are any incomplete todos
-    bool hasIncompleteTodos = todoList.todos.any((todo) => !todo.isCompleted);
+  Widget _buildCalendar() {
+    return Column(
+      children: [
+        // Weekday headers
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                .map((day) => Expanded(
+                      child: Center(
+                        child: Text(
+                          day,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ),
+        SizedBox(height: 8),
+        // Calendar days
+        Container(
+          height: 100,
+          child: ListView.builder(
+            controller: _calendarScrollController,
+            scrollDirection: Axis.horizontal,
+            itemCount: _getDaysInMonth(displayedMonth),
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            itemBuilder: (context, index) {
+              final date = DateTime(
+                displayedMonth.year,
+                displayedMonth.month,
+                index + 1,
+              );
+              final isSelected = selectedDate.year == date.year &&
+                  selectedDate.month == date.month &&
+                  selectedDate.day == date.day;
+              final isToday = date.year == DateTime.now().year &&
+                  date.month == DateTime.now().month &&
+                  date.day == DateTime.now().day;
 
-    if (hasIncompleteTodos) {
-      // Show confirmation dialog for lists with incomplete todos
-      bool? shouldDelete = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Warning'),
-            content: Text(
-                'This list contains incomplete todos. Are you sure you want to delete it?'),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(
-                  'Delete',
-                  style: TextStyle(color: Colors.red),
+              return GestureDetector(
+                onTap: () => setState(() => selectedDate = date),
+                child: Container(
+                  width: 60,
+                  margin: EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? currentCategoryColor
+                        : isToday
+                            ? currentCategoryColor.withOpacity(0.1)
+                            : Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: [
+                      if (isSelected)
+                        BoxShadow(
+                          color: currentCategoryColor.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        [
+                          'Mon',
+                          'Tue',
+                          'Wed',
+                          'Thu',
+                          'Fri',
+                          'Sat',
+                          'Sun'
+                        ][date.weekday - 1],
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '${date.day}',
+                        style: TextStyle(
+                          color: isSelected
+                              ? Colors.white
+                              : isToday
+                                  ? currentCategoryColor
+                                  : Colors.black,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      // Add dot indicator for tasks
+                      if (_hasTasksOnDate(date))
+                        Container(
+                          margin: EdgeInsets.only(top: 4),
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isSelected
+                                ? Colors.white
+                                : currentCategoryColor,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  int _getDaysInMonth(DateTime date) {
+    return DateTime(date.year, date.month + 1, 0).day;
+  }
+
+  bool _hasTasksOnDate(DateTime date) {
+    return todos.any((todo) {
+      final todoDate = todo.createdAt;
+      return todoDate.year == date.year &&
+          todoDate.month == date.month &&
+          todoDate.day == date.day;
+    });
+  }
+
+  List<TodoItem> _getTasksForSelectedDate() {
+    return todos.where((todo) {
+      final todoDate = todo.createdAt;
+      return todoDate.year == selectedDate.year &&
+          todoDate.month == selectedDate.month &&
+          todoDate.day == selectedDate.day;
+    }).toList();
+  }
+
+  // ... (rest of the existing code remains the same)
+
+  Widget _buildTaskList() {
+    final tasksForDate = _getTasksForSelectedDate();
+
+    if (tasksForDate.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.task_alt,
+              size: 48,
+              color: Colors.grey[300],
+            ),
+            SizedBox(height: 16),
+            Text(
+              'No tasks for ${_getMonthName(selectedDate.month)} ${selectedDate.day}',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.all(16),
+      itemCount: tasksForDate.length,
+      itemBuilder: (context, index) {
+        final todo = tasksForDate[index];
+        return Container(
+          margin: EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 5,
+                offset: Offset(0, 2),
               ),
             ],
-          );
-        },
-      );
-
-      if (shouldDelete == true) {
-        setState(() {
-          todoLists.remove(todoList);
-        });
-        await _saveTodoLists();
-      }
-    } else {
-      // If all todos are complete, delete without confirmation
-      setState(() {
-        todoLists.remove(todoList);
-      });
-      await _saveTodoLists();
-    }
+          ),
+          child: ListTile(
+            leading: Checkbox(
+              value: todo.isCompleted,
+              onChanged: (value) {
+                setState(() {
+                  todo.isCompleted = value ?? false;
+                  todo.completedAt = value ?? false ? DateTime.now() : null;
+                });
+              },
+              activeColor: currentCategoryColor,
+              shape: CircleBorder(),
+            ),
+            title: Text(
+              todo.title,
+              style: TextStyle(
+                decoration:
+                    todo.isCompleted ? TextDecoration.lineThrough : null,
+                color: todo.isCompleted ? Colors.grey : Colors.black87,
+              ),
+            ),
+            trailing: Icon(Icons.star_border, color: Colors.amber),
+          ),
+        );
+      },
+    );
   }
 }
