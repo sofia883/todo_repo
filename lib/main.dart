@@ -18,7 +18,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
-// ... (Keep MyApp class the same) ...
-
-// Add the TodoList widget code here (from the previous response)

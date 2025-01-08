@@ -32,28 +32,40 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('My Todo Lists'),
-        backgroundColor: Colors.pink[100],
-        elevation: 0,
-      ),
-      body: GridView.builder(
-        padding: EdgeInsets.all(16),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 0.8,
+        appBar: AppBar(
+          title: Text('My Todo Lists'),
+          backgroundColor: Colors.pink[100],
+          elevation: 0,
         ),
-        itemCount: todoLists.length + 1, // +1 for the "Add" button
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return _buildAddButton();
-          }
-          return _buildTodoCard(todoLists[index - 1]);
-        },
-      ),
-    );
+        // Add a gradient background
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.pink[50]!,
+                Colors.pink[100]!,
+              ],
+            ),
+          ),
+          child: GridView.builder(
+            padding: EdgeInsets.all(16),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 0.8,
+            ),
+            itemCount: todoLists.length + 1, // +1 for the "Add" button
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return _buildAddButton();
+              }
+              return _buildTodoCard(todoLists[index - 1]);
+            },
+          ),
+        ));
   }
 
   Widget _buildAddButton() {
@@ -106,11 +118,18 @@ class _HomePageState extends State<HomePage> {
     return InkWell(
       onTap: () async {
         final result = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => TodoList(existingTodoList: todoList),
-          ),
-        );
+            context,
+            MaterialPageRoute(
+              builder: (context) => TodoList(
+                existingTodoList: todoList,
+                todoListData: TodoListData(
+                  category: todoList.category,
+                  categoryColor: todoList.categoryColor,
+                  title: todoList.title,
+                  todos: todoList.todos,
+                ),
+              ),
+            ));
         if (result != null) {
           setState(() {
             int index = todoLists.indexOf(todoList);
@@ -158,16 +177,17 @@ class _HomePageState extends State<HomePage> {
           borderRadius: BorderRadius.circular(15),
         ),
         child: Padding(
-          padding: EdgeInsets.all(8), // Reduced padding
+          padding: EdgeInsets.all(8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 todoList.title.isNotEmpty ? todoList.title : 'Untitled',
                 style: TextStyle(
-                  fontSize: 14, // Reduced font size
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: Colors.pink[300],
+                  color:
+                      todoList.categoryColor, // Use the list's category color
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

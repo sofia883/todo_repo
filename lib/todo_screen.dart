@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'todo_service.dart';
+import 'dart:math';
 
 // Update the TodoList widget to work with TodoListData
 class TodoList extends StatefulWidget {
   final TodoListData? existingTodoList;
+  final TodoListData? todoListData;
 
-  TodoList({this.existingTodoList});
+  const TodoList({this.todoListData, this.existingTodoList});
 
   @override
   _TodoListState createState() => _TodoListState();
@@ -18,29 +20,93 @@ class _TodoListState extends State<TodoList> {
   FocusNode _newTodoFocus = FocusNode();
   TextEditingController newTodoController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-
+  late String currentCategory;
+  late Color currentCategoryColor;
   bool showEmptyField = false;
   bool isCurrentLineEmpty = true;
 
   List<TodoItem> _deletedTodos = [];
   List<int> _deletedIndices = [];
+
   @override
   void initState() {
     super.initState();
     _newTodoFocus = FocusNode();
-    _scrollController.dispose();
-    titleController = TextEditingController(
-      text: widget.existingTodoList?.title ?? '',
-    );
     todos = widget.existingTodoList?.todos ?? [];
-    isTitleEditing = widget.existingTodoList == null;
+    currentCategory = widget.todoListData?.category ?? 'Personal';
+    currentCategoryColor =
+        widget.todoListData?.categoryColor ?? Colors.pink[300]!;
 
-    // Listen to new todo input
     newTodoController.addListener(() {
       if (newTodoController.text.isNotEmpty) {
-        setState(() {}); // Refresh to show new line
+        setState(() {});
       }
     });
+  }
+
+  Widget _buildCategorySelector() {
+    return Container(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Select Category',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.pink[900],
+            ),
+          ),
+          SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildCategoryChip('Personal', Colors.pink[300]!),
+              _buildCategoryChip('Work', Colors.blue[300]!),
+              _buildCategoryChip('Shopping', Colors.green[300]!),
+              _buildCategoryChip('Health', Colors.purple[300]!),
+              _buildCategoryChip('Travel', Colors.orange[300]!),
+              _buildCategoryChip('Fitness', Colors.red[300]!),
+              _buildCategoryChip('Education', Colors.yellow[300]!),
+              _buildCategoryChip('Finance', Colors.teal[300]!),
+              _buildCategoryChip('Entertainment', Colors.cyan[300]!),
+              _buildCategoryChip('Others', Colors.grey[400]!),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryChip(String category, Color color) {
+    final isSelected = currentCategory == category;
+    return FilterChip(
+      selected: isSelected,
+      selectedColor: color.withOpacity(0.2),
+      backgroundColor: Colors.grey[100],
+      label: Text(
+        category,
+        style: TextStyle(
+          color: isSelected ? color.darker : Colors.grey[600],
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      onSelected: (bool selected) {
+        setState(() {
+          currentCategory = category;
+          currentCategoryColor = color;
+        });
+      },
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: isSelected ? color : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+    );
   }
 
   @override
@@ -92,7 +158,7 @@ class _TodoListState extends State<TodoList> {
             });
           },
         ),
-        backgroundColor: Colors.pink[300],
+        backgroundColor: currentCategoryColor,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
         ),
@@ -105,7 +171,7 @@ class _TodoListState extends State<TodoList> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.pink[100],
+        backgroundColor: currentCategoryColor.withOpacity(0.2),
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back),
@@ -117,11 +183,62 @@ class _TodoListState extends State<TodoList> {
             Navigator.pop(
               context,
               TodoListData(
-                title: titleController.text,
+                category: currentCategory, // Use the current category
+                categoryColor: currentCategoryColor, // Use the current color
+                title: currentCategory,
                 todos: todos,
               ),
             );
           },
+        ),
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          color: currentCategoryColor.withOpacity(0.1),
+        ),
+        child: Column(
+          children: [
+            _buildCategorySelector(),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Card(
+                  elevation: 0,
+                  color: const Color.fromARGB(255, 249, 245, 247),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        _buildCompletionCounter(),
+                        SizedBox(height: 20),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount:
+                                todos.length + (isCurrentLineEmpty ? 1 : 2),
+                            itemBuilder: (context, index) {
+                              if (index < todos.length) {
+                                return buildTodoItem(index);
+                              } else if (index == todos.length) {
+                                return _buildNewTodoField(
+                                    index, DateTime.now(), null);
+                              } else if (index == todos.length + 1 &&
+                                  !isCurrentLineEmpty) {
+                                return _buildEmptyTodoField();
+                              }
+                              return SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
@@ -133,113 +250,38 @@ class _TodoListState extends State<TodoList> {
           Navigator.pop(
             context,
             TodoListData(
-              title: titleController.text,
+              category: currentCategory, // Use the current category
+              categoryColor: currentCategoryColor, // Use the current color
+              title: currentCategory,
               todos: todos,
             ),
           );
         },
-        backgroundColor: Colors.pink[300],
-        child: Icon(Icons.fork_right, color: Colors.white),
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          color: Color(0xFFFCE4EC),
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Card(
-            elevation: 0,
-            color: const Color.fromARGB(255, 249, 245, 247),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _buildTitle(),
-                  SizedBox(height: 20),
-                  Expanded(
-                    child: ListView.builder(
-                        itemCount: todos.length + (isCurrentLineEmpty ? 1 : 2),
-                        itemBuilder: (context, index) {
-                          if (index < todos.length) {
-                            // Display existing todo items
-                            final todo = todos[index];
-                            return buildTodoItem(index);
-                          } else if (index == todos.length) {
-                            // Pass the index and provide default DateTime values for createdTime and completedTime
-                            return _buildNewTodoField(
-                                index, DateTime.now(), null);
-                          } else if (index == todos.length + 1 &&
-                              !isCurrentLineEmpty) {
-                            // Pass the index when calling _buildEmptyTodoField
-                            return _buildEmptyTodoField();
-                          }
-                          return SizedBox.shrink(); // Return an empty widget
-                        }),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+        backgroundColor: currentCategoryColor,
+        child: Icon(Icons.check, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildTitle() {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: titleController,
-            decoration: InputDecoration(
-              hintText: 'Add Title',
-              border: InputBorder.none,
-              hintStyle: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.pink[300]!.withOpacity(0.5),
-              ),
-            ),
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.pink[900],
-            ),
-            onTap: () {
-              if (!isTitleEditing) {
-                setState(() {
-                  isTitleEditing = true;
-                  titleController.clear();
-                });
-              }
-            },
-          ),
+  Widget _buildCompletionCounter() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: currentCategoryColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: currentCategoryColor.withOpacity(0.3),
+          width: 1.5,
         ),
-        // Completion counter
-        Container(
-          margin: EdgeInsets.only(left: 8),
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.pink[50],
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.pink[200]!,
-              width: 1.5,
-            ),
-          ),
-          child: Text(
-            '${todos.where((todo) => todo.isCompleted).length}/${todos.length}',
-            style: TextStyle(
-              color: Colors.pink[400],
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
+      ),
+      child: Text(
+        '${todos.where((todo) => todo.isCompleted).length}/${todos.length}',
+        style: TextStyle(
+          color: currentCategoryColor.darker,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
         ),
-      ],
+      ),
     );
   }
 
@@ -286,19 +328,20 @@ class _TodoListState extends State<TodoList> {
 
   Widget buildTodoItem(int index) {
     final todo = todos[index];
-    double progress = todo.isCompleted
-        ? 1.0
-        : (DateTime.now().difference(todo.createdAt).inMinutes / 1440)
-            .clamp(0.0, 1.0);
 
+    // Generate or retrieve a persistent color for the todo
+    todo.backgroundColor;
+
+    double progress = todo.isCompleted ? 1.0 : 0.0;
     return StatefulBuilder(
       builder: (context, setState) {
         return AnimatedContainer(
           duration: Duration(milliseconds: 300),
           curve: Curves.easeInOut,
+          margin: EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            color: currentCategoryColor.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Material(
             color: Colors.transparent,
@@ -310,10 +353,22 @@ class _TodoListState extends State<TodoList> {
                       todo.isCompleted = !todo.isCompleted;
                       todo.completedAt =
                           todo.isCompleted ? DateTime.now() : null;
+
+                      // Recalculate progress when status changes
+                      progress = todo.isCompleted
+                          ? 1.0
+                          : (DateTime.now()
+                                      .difference(todo.createdAt)
+                                      .inMinutes /
+                                  1440)
+                              .clamp(0.0, 1.0);
+
                       this.setState(() {});
                     });
 
                     final updatedList = TodoListData(
+                      category: 'Personal', // Default category
+                      categoryColor: Colors.pink[300]!, // Default color
                       title: titleController.text,
                       todos: todos,
                     );
@@ -324,6 +379,8 @@ class _TodoListState extends State<TodoList> {
                               list.title == widget.existingTodoList!.title)
                           ..add(updatedList));
                   },
+                  // ... rest of the code remains the same
+
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Row(
@@ -338,12 +395,13 @@ class _TodoListState extends State<TodoList> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: todo.isCompleted
-                                ? Colors.pink[400]
+                                ? currentCategoryColor
                                 : Colors.transparent,
                             border: todo.isCompleted
                                 ? null
                                 : Border.all(
-                                    color: Colors.pink[200]!,
+                                    color:
+                                        currentCategoryColor.withOpacity(0.5),
                                     width: 1,
                                   ),
                           ),
@@ -364,8 +422,8 @@ class _TodoListState extends State<TodoList> {
                                   ? TextDecoration.lineThrough
                                   : null,
                               color: todo.isCompleted
-                                  ? Colors.pink[400]
-                                  : Colors.pink[900],
+                                  ? currentCategoryColor
+                                  : currentCategoryColor.darker,
                             ),
                             child: Text(todo.text),
                           ),
@@ -375,7 +433,7 @@ class _TodoListState extends State<TodoList> {
                             todo.isDetailsExpanded!
                                 ? Icons.arrow_drop_up
                                 : Icons.arrow_drop_down,
-                            color: Colors.pink[400],
+                            color: currentCategoryColor,
                           ),
                           onPressed: () {
                             setState(() {
@@ -420,8 +478,9 @@ class _TodoListState extends State<TodoList> {
                             min: 0.0,
                             max: 1.0,
                             onChanged: (_) {},
-                            activeColor: Colors.pink[400],
-                            inactiveColor: Colors.pink[100],
+                            activeColor: currentCategoryColor,
+                            inactiveColor:
+                                currentCategoryColor.withOpacity(0.2),
                           ),
                         ),
                         Row(
@@ -459,13 +518,14 @@ class _TodoListState extends State<TodoList> {
               margin: EdgeInsets.only(right: 12),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.pink[200]!),
+                border:
+                    Border.all(color: currentCategoryColor.withOpacity(0.5)),
               ),
               child: Center(
                 child: Text(
                   '${index + 1}',
                   style: TextStyle(
-                    color: Colors.pink[300],
+                    color: currentCategoryColor,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
@@ -481,8 +541,11 @@ class _TodoListState extends State<TodoList> {
                 decoration: InputDecoration(
                   border: InputBorder.none,
                   hintText: "Add new task",
+                  hintStyle:
+                      TextStyle(color: currentCategoryColor.withOpacity(0.5)),
                   contentPadding: EdgeInsets.symmetric(vertical: 8),
                 ),
+                style: TextStyle(color: currentCategoryColor.darker),
                 onChanged: (value) {
                   setState(() {
                     isCurrentLineEmpty = value.isEmpty;
@@ -497,7 +560,7 @@ class _TodoListState extends State<TodoList> {
               ),
             ),
             IconButton(
-              icon: Icon(Icons.add, color: Colors.pink[300]),
+              icon: Icon(Icons.add, color: currentCategoryColor),
               onPressed: () {
                 if (newTodoController.text.trim().isNotEmpty) {
                   _addNewTodo(newTodoController.text);
@@ -510,84 +573,39 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
-// Helper methods to format the date and time
-
-  String _getDayOfMonthSuffix(int day) {
-    if (day >= 11 && day <= 13) {
-      return 'th';
-    }
-    switch (day % 10) {
-      case 1:
-        return 'st';
-      case 2:
-        return 'nd';
-      case 3:
-        return 'rd';
-      default:
-        return 'th';
-    }
-  }
-
-  String _getMonth(int month) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return months[month - 1];
-  }
-
   Future<void> _addNewTodo(String value) async {
     if (value.trim().isNotEmpty) {
       setState(() {
-        // Add the new to-do item
         todos.add(TodoItem(
           text: value.trim(),
           createdAt: DateTime.now(),
         ));
-        newTodoController.clear(); // Clear the text field
-        isCurrentLineEmpty = true; // Reset the empty state
+        newTodoController.clear();
+        isCurrentLineEmpty = true;
       });
-      _newTodoFocus.unfocus(); // Unfocus the current input
-      _newTodoFocus = FocusNode(); // Create a new focus node for the next input
-      _newTodoFocus.requestFocus(); // Set focus to the next input
-      // Save the updated list to storage
-      final updatedList = TodoListData(
+
+      var currentLists = await TodoStorage.loadTodoLists();
+      currentLists.removeWhere((list) =>
+          list.title == titleController.text ||
+          (list.title.isEmpty && listHasSameTodos(list, todos)));
+
+      currentLists.add(TodoListData(
+        category: currentCategory, // Use the selected category
+        categoryColor: currentCategoryColor, // Use the selected color
         title: titleController.text,
         todos: todos,
-      );
-      await TodoStorage.saveTodoLists((await TodoStorage.loadTodoLists())
-        ..removeWhere((list) =>
-            widget.existingTodoList != null &&
-            list.title == widget.existingTodoList!.title)
-        ..add(updatedList));
+      ));
 
-      // Scroll to the newly added task and focus on the input field
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Scroll to the bottom
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-
-        // Focus on the text field for a new task
-        if (!_newTodoFocus.hasFocus) {
-          _newTodoFocus.requestFocus();
-        }
-      });
+      await TodoStorage.saveTodoLists(currentLists);
     }
+  }
+
+  bool listHasSameTodos(TodoListData list1, List<TodoItem> todos) {
+    if (list1.todos.length != todos.length) return false;
+    for (int i = 0; i < todos.length; i++) {
+      if (list1.todos[i].text != todos[i].text) return false;
+    }
+    return true;
   }
 
   Widget _buildEmptyTodoField() {
@@ -639,5 +657,12 @@ class _TodoListState extends State<TodoList> {
         ),
       ),
     );
+  }
+}
+
+extension ColorExtension on Color {
+  Color get darker {
+    final hsl = HSLColor.fromColor(this);
+    return hsl.withLightness((hsl.lightness - 0.2).clamp(0.0, 1.0)).toColor();
   }
 }

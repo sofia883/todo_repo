@@ -1,19 +1,22 @@
 import 'dart:convert';
+import 'dart:ui';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TodoItem {
   String text;
-  bool isCompleted;
   DateTime createdAt;
   DateTime? completedAt;
-  bool isDetailsExpanded;
+  bool isCompleted;
+  bool? isDetailsExpanded;
+  Color? backgroundColor; // New property to store persistent background color
 
   TodoItem({
     required this.text,
-    this.isCompleted = false,
     required this.createdAt,
     this.completedAt,
+    this.isCompleted = false,
     this.isDetailsExpanded = false,
+    this.backgroundColor,
   });
 
   factory TodoItem.fromJson(Map<String, dynamic> json) {
@@ -43,27 +46,34 @@ class TodoItem {
 class TodoListData {
   String title;
   List<TodoItem> todos;
-
+  String category; // e.g., 'Work', 'Personal', 'Shopping'
+  Color categoryColor;
   TodoListData({
+    required this.category,
+    required this.categoryColor,
     required this.title,
     required this.todos,
   });
 
-  Map<String, dynamic> toJson() {
-    return {
-      'title': title,
-      'todos': todos.map((todo) => todo.toJson()).toList(),
-    };
-  }
+ factory TodoListData.fromJson(Map<String, dynamic> json) {
+  return TodoListData(
+    title: json['title'],
+    todos: (json['todos'] as List)
+        .map((todo) => TodoItem.fromJson(todo))
+        .toList(),
+    category: json['category'] ?? 'Uncategorized', // Default value
+    categoryColor: Color(json['categoryColor'] ?? 0xFFFF80AB), // Default pink color
+  );
+}
 
-  factory TodoListData.fromJson(Map<String, dynamic> json) {
-    return TodoListData(
-      title: json['title'],
-      todos: (json['todos'] as List)
-          .map((todo) => TodoItem.fromJson(todo))
-          .toList(),
-    );
-  }
+Map<String, dynamic> toJson() {
+  return {
+    'title': title,
+    'todos': todos.map((todo) => todo.toJson()).toList(),
+    'category': category,
+    'categoryColor': categoryColor.value,
+  };
+}
 }
 
 // Storage service class
