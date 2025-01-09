@@ -2,68 +2,60 @@ import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// Update TodoItem class to support JSON serialization
 class TodoItem {
-  String title; // Title of the todo item
-  String description; // Description of the todo item
-  DateTime createdAt; // When the item was created
-  DateTime? completedAt; // When the item was completed
-  DateTime dueDate; // Due date for the item
-  TimeOfDay? dueTime; // Due time for the item
-  bool isCompleted; // Completion status
-  bool? isDetailsExpanded; // Whether details are expanded
-  Color? backgroundColor; // Persistent background color for UI
+  String title;
+  String description;
+  DateTime createdAt;
+  DateTime dueDate;
+  TimeOfDay? dueTime;
+  bool isCompleted;
+  DateTime? completedAt;
 
   TodoItem({
     required this.title,
-    this.description = '',
+    required this.description,
     required this.createdAt,
-    this.completedAt,
     required this.dueDate,
     this.dueTime,
     this.isCompleted = false,
-    this.isDetailsExpanded = false,
-    this.backgroundColor,
+    this.completedAt,
   });
 
-  /// Factory method to create a `TodoItem` instance from JSON.
-  factory TodoItem.fromJson(Map<String, dynamic> json) {
-    return TodoItem(
-      title: json['title'],
-      description: json['description'] ?? '',
-      createdAt: DateTime.parse(json['createdAt']),
-      completedAt: json['completedAt'] != null
-          ? DateTime.parse(json['completedAt'])
-          : null,
-      dueDate: DateTime.parse(json['dueDate']),
-      dueTime: json['dueTime'] != null
-          ? TimeOfDay(
-              hour: json['dueTime']['hour'],
-              minute: json['dueTime']['minute'],
-            )
-          : null,
-      isCompleted: json['isCompleted'] ?? false,
-      isDetailsExpanded: json['isDetailsExpanded'] ?? false,
-      backgroundColor: json['backgroundColor'] != null
-          ? Color(json['backgroundColor'])
-          : null,
-    );
-  }
-
-  /// Converts the `TodoItem` instance to JSON format.
   Map<String, dynamic> toJson() {
     return {
       'title': title,
       'description': description,
       'createdAt': createdAt.toIso8601String(),
-      'completedAt': completedAt?.toIso8601String(),
       'dueDate': dueDate.toIso8601String(),
-      'dueTime': dueTime != null
-          ? {'hour': dueTime!.hour, 'minute': dueTime!.minute}
-          : null,
+      'dueTime': dueTime != null ? '${dueTime!.hour}:${dueTime!.minute}' : null,
       'isCompleted': isCompleted,
-      'isDetailsExpanded': isDetailsExpanded,
-      'backgroundColor': backgroundColor?.value,
+      'completedAt': completedAt?.toIso8601String(),
     };
+  }
+
+  static TodoItem fromJson(Map<String, dynamic> json) {
+    TimeOfDay? dueTime;
+    if (json['dueTime'] != null) {
+      final timeParts = json['dueTime'].split(':');
+      dueTime = TimeOfDay(
+        hour: int.parse(timeParts[0]),
+        minute: int.parse(timeParts[1]),
+      );
+    }
+
+    return TodoItem(
+      title: json['title'],
+      description: json['description'],
+      createdAt: DateTime.parse(json['createdAt']),
+      dueDate: DateTime.parse(json['dueDate']),
+      dueTime: dueTime,
+      isCompleted: json['isCompleted'],
+      completedAt: json['completedAt'] != null
+          ? DateTime.parse(json['completedAt'])
+          : null,
+    );
   }
 }
 

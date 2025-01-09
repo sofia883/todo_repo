@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'todo_service.dart';
+import 'package:to_do_app/pages/profile_page.dart';
+import 'package:to_do_app/services/todo_service.dart';
 
 class TodoList extends StatefulWidget {
   final TodoListData? existingTodoList;
@@ -18,7 +19,6 @@ class _TodoListState extends State<TodoList> {
   late String currentCategory;
   late Color currentCategoryColor;
   final TextEditingController newTodoController = TextEditingController();
-  final FocusNode _newTodoFocus = FocusNode();
   bool isCurrentLineEmpty = true;
   final ScrollController _calendarScrollController = ScrollController();
 
@@ -32,16 +32,6 @@ class _TodoListState extends State<TodoList> {
     currentCategoryColor = widget.todoListData?.categoryColor ?? Colors.indigo;
 
     // No need for scrollToToday since dates are now ordered correctly
-  }
-
-  void _scrollToToday() {
-    final today = DateTime.now().day;
-    final itemWidth = 68.0; // 60 width + 8 margin
-    _calendarScrollController.animateTo(
-      (today - 1) * itemWidth,
-      duration: Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
   }
 
   bool _hasTasksOnDate(DateTime date) {
@@ -65,51 +55,32 @@ class _TodoListState extends State<TodoList> {
   Widget _buildCalendar() {
     final today = DateTime.now();
     final daysInMonth = _getDaysInMonth(displayedMonth);
-    final daysInNextMonth = _getDaysInMonth(
-        DateTime(displayedMonth.year, displayedMonth.month + 1));
 
     // Create a list of dates
     List<DateTime> orderedDates = [];
 
-    // Handle current month
-    if (displayedMonth.year == today.year &&
-        displayedMonth.month == today.month) {
-      // Only add dates from today onwards
-      for (int i = today.day; i <= daysInMonth; i++) {
-        orderedDates
-            .add(DateTime(displayedMonth.year, displayedMonth.month, i));
-      }
+    // Add dates from the current month
+    for (int i = (displayedMonth.year == today.year &&
+                displayedMonth.month == today.month)
+            ? today.day
+            : 1;
+        i <= daysInMonth;
+        i++) {
+      orderedDates.add(DateTime(displayedMonth.year, displayedMonth.month, i));
+    }
 
-      // Add dates from next month
+    // If the total dates are less than 30, add remaining days from the next month
+    if (orderedDates.length < 30) {
       final nextMonth = DateTime(displayedMonth.year, displayedMonth.month + 1);
-      for (int i = 1; i <= daysInNextMonth; i++) {
+      final daysToAdd = 31 - orderedDates.length;
+
+      for (int i = 1; i <= daysToAdd; i++) {
         orderedDates.add(DateTime(nextMonth.year, nextMonth.month, i));
       }
     }
-    // Handle future months
-    else if (displayedMonth.isAfter(DateTime(today.year, today.month))) {
-      // Show all dates for future months
-      for (int i = 1; i <= daysInMonth; i++) {
-        orderedDates
-            .add(DateTime(displayedMonth.year, displayedMonth.month, i));
-      }
-    }
-    // Handle past months - don't show any dates
-    else {
-      // Don't add any dates for past months
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            'Past dates are not available',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 16,
-            ),
-          ),
-        ),
-      );
-    }
+
+    // Limit to at most 31 days
+    orderedDates = orderedDates.take(31).toList();
 
     return Column(
       children: [
@@ -239,6 +210,21 @@ class _TodoListState extends State<TodoList> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon:
+              Icon(Icons.account_circle, color: currentCategoryColor, size: 45),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => ProfilePage(todos: todos)),
+            );
+          },
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
