@@ -193,6 +193,156 @@ class _TodoListState extends State<TodoList> {
           todoDate.day == selectedDate.day;
     }).toList();
   }
+// Part 1: Task Input Validation and Dialog remains the same as before, just remove the star icon related code
+
+// Part 2: Updated Task List Item Display with improved UI
+  Widget _buildTaskList() {
+    final tasksForDate = _getTasksForSelectedDate();
+
+    if (tasksForDate.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.task_alt,
+              size: 64,
+              color: Colors.grey[200],
+            ),
+            SizedBox(height: 16),
+            Text(
+              'No tasks for ${_getMonthName(selectedDate.month)} ${selectedDate.day}',
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Tap + to add a new task',
+              style: TextStyle(
+                color: Colors.grey[400],
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: tasksForDate.length,
+      itemBuilder: (context, index) {
+        final todo = tasksForDate[index];
+        return Container(
+          margin: EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: currentCategoryColor.withOpacity(0.08),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ListTile(
+            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: InkWell(
+              onTap: () {
+                setState(() {
+                  todo.isCompleted = !todo.isCompleted;
+                  todo.completedAt = todo.isCompleted ? DateTime.now() : null;
+                });
+              },
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: todo.isCompleted
+                      ? currentCategoryColor
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: todo.isCompleted
+                        ? currentCategoryColor
+                        : Colors.grey[400]!,
+                    width: 2,
+                  ),
+                ),
+                child: todo.isCompleted
+                    ? Icon(
+                        Icons.check,
+                        size: 16,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+            ),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  todo.title.isEmpty ? 'Untitled Task' : todo.title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    decoration:
+                        todo.isCompleted ? TextDecoration.lineThrough : null,
+                    color: todo.isCompleted ? Colors.grey[400] : Colors.black87,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  todo.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    decoration:
+                        todo.isCompleted ? TextDecoration.lineThrough : null,
+                    color:
+                        todo.isCompleted ? Colors.grey[400] : Colors.grey[600],
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            trailing: todo.dueTime != null
+                ? Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: currentCategoryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: currentCategoryColor,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          todo.dueTime!.format(context),
+                          style: TextStyle(
+                            color: currentCategoryColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : null,
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildCalendar() {
     final today = DateTime.now();
@@ -398,260 +548,457 @@ class _TodoListState extends State<TodoList> {
     final TextEditingController descriptionController = TextEditingController();
     DateTime selectedDueDate = DateTime.now();
     TimeOfDay? selectedDueTime;
-    String selectedDateType = 'today'; // 'today', 'tomorrow', 'custom'
+    String selectedDateType = 'today';
+    bool showDescriptionError = false;
+    bool showTimeError = false;
 
-    showDialog(
+    // Predefined titles
+    final List<String> predefinedTitles = [
+      'Daily Meeting',
+      'Weekly Review',
+      'Doctor Appointment',
+      'Gym Session',
+      'Shopping',
+      'Study',
+      'Project Work'
+    ];
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Dialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Add task',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
+        builder: (context, setState) {
+          bool isValidDueTime(DateTime date, TimeOfDay time) {
+            final now = DateTime.now();
+            final selectedDateTime = DateTime(
+              date.year,
+              date.month,
+              date.day,
+              time.hour,
+              time.minute,
+            );
+            return selectedDateTime.isAfter(now);
+          }
 
-                  // Title Field
-                  TextField(
-                    controller: titleController,
-                    decoration: InputDecoration(
-                      labelText: 'Task Title',
-                      hintText: 'Enter task title',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      prefixIcon: Icon(Icons.task_alt),
-                    ),
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.85,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Handle bar
+                Container(
+                  margin: EdgeInsets.symmetric(vertical: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  SizedBox(height: 16),
-
-                  // Description Field
-                  TextField(
-                    controller: descriptionController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: 'Description',
-                      hintText: 'Enter task description',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      prefixIcon: Icon(Icons.description),
-                    ),
-                  ),
-                  SizedBox(height: 16),
-
-                  // Date Selection
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(16),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Text(
-                            'Due Date',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        // Quick Date Options
+                        // Header
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _buildDateOption(
-                              'Today',
-                              selectedDateType == 'today',
-                              () => setState(() {
-                                selectedDateType = 'today';
-                                selectedDueDate = DateTime.now();
-                              }),
+                            Text(
+                              'Add Task',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            _buildDateOption(
-                              'Tomorrow',
-                              selectedDateType == 'tomorrow',
-                              () => setState(() {
-                                selectedDateType = 'tomorrow';
-                                selectedDueDate =
-                                    DateTime.now().add(Duration(days: 1));
-                              }),
-                            ),
-                            _buildDateOption(
-                              'Custom',
-                              selectedDateType == 'custom',
-                              () async {
-                                final picked = await showDatePicker(
-                                  context: context,
-                                  initialDate: selectedDueDate,
-                                  firstDate: DateTime.now(),
-                                  lastDate: DateTime(2025),
-                                );
-                                if (picked != null) {
-                                  setState(() {
-                                    selectedDateType = 'custom';
-                                    selectedDueDate = picked;
-                                  });
-                                }
-                              },
+                            IconButton(
+                              icon: Icon(Icons.close),
+                              onPressed: () => Navigator.pop(context),
                             ),
                           ],
                         ),
+                        SizedBox(height: 16),
 
-                        // Selected Date Display
-                        Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Row(
+                        // Title Field with Dropdown
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: titleController,
+                                decoration: InputDecoration(
+                                  labelText: 'Task Title',
+                                  hintText: 'Enter task title',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  prefixIcon: Icon(Icons.task_alt),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Container(
+                              height: 56,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey[300]!),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: PopupMenuButton<String>(
+                                icon: Icon(Icons.arrow_drop_down),
+                                onSelected: (String value) {
+                                  titleController.text = value;
+                                },
+                                itemBuilder: (BuildContext context) {
+                                  return predefinedTitles.map((String title) {
+                                    return PopupMenuItem<String>(
+                                      value: title,
+                                      child: Text(title),
+                                    );
+                                  }).toList();
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 16),
+
+                        // Description Field
+                        TextField(
+                          controller: descriptionController,
+                          maxLines: 3,
+                          decoration: InputDecoration(
+                            labelText: 'Description',
+                            hintText: 'Enter task description',
+                            errorText: showDescriptionError
+                                ? 'Description is required'
+                                : null,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            prefixIcon: Icon(Icons.description),
+                          ),
+                        ),
+
+                        SizedBox(height: 16),
+
+                        // Date Selection
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[300]!),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.calendar_today,
-                                  size: 20, color: currentCategoryColor),
-                              SizedBox(width: 8),
-                              Text(
-                                '${selectedDueDate.day}/${selectedDueDate.month}/${selectedDueDate.year}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: currentCategoryColor,
+                              Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Text(
+                                  'Due Date',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              // Quick Date Options in a single row with fixed width
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 100,
+                                      child: _buildDateOption(
+                                        'Today',
+                                        selectedDateType == 'today',
+                                        () => setState(() {
+                                          selectedDateType = 'today';
+                                          selectedDueDate = DateTime.now();
+                                          if (selectedDueTime != null &&
+                                              !isValidDueTime(selectedDueDate,
+                                                  selectedDueTime!)) {
+                                            selectedDueTime = null;
+                                          }
+                                        }),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 100,
+                                      child: _buildDateOption(
+                                        'Tomorrow',
+                                        selectedDateType == 'tomorrow',
+                                        () => setState(() {
+                                          selectedDateType = 'tomorrow';
+                                          selectedDueDate = DateTime.now()
+                                              .add(Duration(days: 1));
+                                        }),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 100,
+                                      child: InkWell(
+                                        onTap: () async {
+                                          final now = DateTime.now();
+                                          final currentDate = DateTime(
+                                              now.year, now.month, now.day);
+
+                                          final picked = await showDatePicker(
+                                            context: context,
+                                            initialDate: selectedDueDate
+                                                    .isBefore(currentDate)
+                                                ? currentDate
+                                                : selectedDueDate,
+                                            firstDate: currentDate,
+                                            lastDate: DateTime(
+                                                currentDate.year + 2, 12, 31),
+                                            builder: (context, child) {
+                                              return Theme(
+                                                data:
+                                                    Theme.of(context).copyWith(
+                                                  colorScheme: Theme.of(context)
+                                                      .colorScheme
+                                                      .copyWith(
+                                                        primary:
+                                                            currentCategoryColor,
+                                                      ),
+                                                ),
+                                                child: child!,
+                                              );
+                                            },
+                                          );
+
+                                          if (picked != null) {
+                                            setState(() {
+                                              selectedDateType = 'custom';
+                                              selectedDueDate = picked;
+                                              if (selectedDueTime != null &&
+                                                  !isValidDueTime(picked,
+                                                      selectedDueTime!)) {
+                                                selectedDueTime = null;
+                                              }
+                                            });
+                                          }
+                                        },
+                                        child: Container(
+                                          margin: EdgeInsets.all(8),
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: 8,
+                                            horizontal: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(
+                                                color: Colors.grey[300]!),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                            color: selectedDateType == 'custom'
+                                                ? currentCategoryColor
+                                                : Colors.transparent,
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.calendar_today,
+                                                size: 16,
+                                                color:
+                                                    selectedDateType == 'custom'
+                                                        ? Colors.white
+                                                        : Colors.grey[600],
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'Pick',
+                                                style: TextStyle(
+                                                  color: selectedDateType ==
+                                                          'custom'
+                                                      ? Colors.white
+                                                      : Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.calendar_today,
+                                        size: 20, color: currentCategoryColor),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      '${selectedDueDate.day}/${selectedDueDate.month}/${selectedDueDate.year}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: currentCategoryColor,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(height: 16),
+                        SizedBox(height: 16),
 
-                  // Time Selection
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Text(
-                            'Due Time (Optional)',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.bold,
+                        // Time Selection with Validation
+                        // Updated Time Selection
+                        // In _showAddTaskDialog, add this variable at the beginning:
+
+// Replace the time selection container with this updated version:
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: showTimeError
+                                  ? Colors.red
+                                  : Colors.grey[300]!,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ListTile(
+                                leading: Icon(
+                                  Icons.access_time,
+                                  color: showTimeError ? Colors.red : null,
+                                ),
+                                title: Text(
+                                  selectedDueTime != null
+                                      ? '${selectedDueTime!.format(context)}'
+                                      : 'Set time (Optional)',
+                                  style: TextStyle(
+                                    color: showTimeError ? Colors.red : null,
+                                  ),
+                                ),
+                                trailing: selectedDueTime != null
+                                    ? IconButton(
+                                        icon: Icon(Icons.clear),
+                                        onPressed: () => setState(() {
+                                          selectedDueTime = null;
+                                          showTimeError = false;
+                                        }),
+                                      )
+                                    : null,
+                                onTap: () async {
+                                  final picked = await showTimePicker(
+                                    context: context,
+                                    initialTime: TimeOfDay.now(),
+                                  );
+
+                                  if (picked != null) {
+                                    if (isValidDueTime(
+                                        selectedDueDate, picked)) {
+                                      setState(() {
+                                        selectedDueTime = picked;
+                                        showTimeError = false;
+                                      });
+                                    } else {
+                                      setState(() {
+                                        selectedDueTime = null;
+                                        showTimeError = true;
+                                      });
+                                    }
+                                  }
+                                },
+                              ),
+                              if (showTimeError)
+                                Padding(
+                                  padding: EdgeInsets.only(
+                                      left: 16, right: 16, bottom: 8),
+                                  child: Text(
+                                    'Cannot set due time in the past',
+                                    style: TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+
+                        SizedBox(height: 24),
+
+                        // Add Task Button
+                        // Updated Add Task Button
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              showDescriptionError =
+                                  descriptionController.text.trim().isEmpty;
+                            });
+
+                            if (!showDescriptionError) {
+                              setState(() {
+                                todos.add(TodoItem(
+                                  title: titleController.text.trim(),
+                                  description:
+                                      descriptionController.text.trim(),
+                                  createdAt: DateTime.now(),
+                                  dueDate: selectedDueDate,
+                                  dueTime: selectedDueTime,
+                                ));
+                              });
+                              Navigator.pop(context);
+                            }
+                          },
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              'Add Task',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: currentCategoryColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
                         ),
-                        ListTile(
-                          leading: Icon(Icons.access_time),
-                          title: Text(
-                            selectedDueTime != null
-                                ? '${selectedDueTime!.format(context)}'
-                                : 'Set time',
-                          ),
-                          trailing: selectedDueTime != null
-                              ? IconButton(
-                                  icon: Icon(Icons.clear),
-                                  onPressed: () =>
-                                      setState(() => selectedDueTime = null),
-                                )
-                              : null,
-                          onTap: () async {
-                            final picked = await showTimePicker(
-                              context: context,
-                              initialTime: TimeOfDay.now(),
-                            );
-                            if (picked != null) {
-                              setState(() => selectedDueTime = picked);
-                            }
-                          },
-                        ),
                       ],
                     ),
                   ),
-                  SizedBox(height: 24),
-
-                  // Add Task Button
-                  ElevatedButton(
-                    onPressed: () {
-                      if (titleController.text.trim().isNotEmpty) {
-                        setState(() {
-                          todos.add(TodoItem(
-                            title: titleController.text.trim(),
-                            description: descriptionController.text.trim(),
-                            createdAt: DateTime.now(),
-                            dueDate: selectedDueDate,
-                            dueTime: selectedDueTime,
-                          ));
-                        });
-                        Navigator.pop(context);
-                      }
-                    },
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Add Task',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: currentCategoryColor,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 
+// Update the date option builder for fixed width
   Widget _buildDateOption(String text, bool isSelected, VoidCallback onTap) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          margin: EdgeInsets.all(8),
-          padding: EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? currentCategoryColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isSelected ? currentCategoryColor : Colors.grey[300]!,
-            ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: EdgeInsets.all(8),
+        padding: EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? currentCategoryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? currentCategoryColor : Colors.grey[300]!,
           ),
-          child: Center(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey[600],
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.grey[600],
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ),
@@ -678,78 +1025,5 @@ class _TodoListState extends State<TodoList> {
 
   int _getDaysInMonth(DateTime date) {
     return DateTime(date.year, date.month + 1, 0).day;
-  }
-
-  // ... (rest of the existing code remains the same)
-
-  Widget _buildTaskList() {
-    final tasksForDate = _getTasksForSelectedDate();
-
-    if (tasksForDate.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.task_alt,
-              size: 48,
-              color: Colors.grey[300],
-            ),
-            SizedBox(height: 16),
-            Text(
-              'No tasks for ${_getMonthName(selectedDate.month)} ${selectedDate.day}',
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.all(16),
-      itemCount: tasksForDate.length,
-      itemBuilder: (context, index) {
-        final todo = tasksForDate[index];
-        return Container(
-          margin: EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 5,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: ListTile(
-            leading: Checkbox(
-              value: todo.isCompleted,
-              onChanged: (value) {
-                setState(() {
-                  todo.isCompleted = value ?? false;
-                  todo.completedAt = value ?? false ? DateTime.now() : null;
-                });
-              },
-              activeColor: currentCategoryColor,
-              shape: CircleBorder(),
-            ),
-            title: Text(
-              todo.title,
-              style: TextStyle(
-                decoration:
-                    todo.isCompleted ? TextDecoration.lineThrough : null,
-                color: todo.isCompleted ? Colors.grey : Colors.black87,
-              ),
-            ),
-            trailing: Icon(Icons.star_border, color: Colors.amber),
-          ),
-        );
-      },
-    );
   }
 }
