@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:to_do_app/pages/profile_page.dart';
 import 'package:to_do_app/services/todo_service.dart';
+import 'package:to_do_app/services/to_do_storage.dart';
 
 class TodoList extends StatefulWidget {
   final TodoListData? existingTodoList;
@@ -12,27 +13,168 @@ class TodoList extends StatefulWidget {
   _TodoListState createState() => _TodoListState();
 }
 
+// Update the TodoList state class
 class _TodoListState extends State<TodoList> {
   late List<TodoItem> todos;
   late DateTime selectedDate;
   late DateTime displayedMonth;
   late String currentCategory;
   late Color currentCategoryColor;
+  bool showMyTasksOnly = false;
   final TextEditingController newTodoController = TextEditingController();
-  bool isCurrentLineEmpty = true;
   final ScrollController _calendarScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    todos = widget.existingTodoList?.todos ?? [];
     selectedDate = DateTime.now();
     displayedMonth = DateTime.now();
     currentCategory = widget.todoListData?.category ?? 'Personal';
     currentCategoryColor = widget.todoListData?.categoryColor ?? Colors.indigo;
-
-    // No need for scrollToToday since dates are now ordered correctly
+    _loadTodos();
   }
+
+  Future<void> _loadTodos() async {
+    final loadedTodos = await TodoStorage.loadTodos();
+    setState(() {
+      todos = loadedTodos;
+    });
+  }
+
+  // Update the build method to remove duplicate year display
+  Widget _buildMonthYearSelector() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Month Dropdown
+          PopupMenuButton<DateTime>(
+            child: Row(
+              children: [
+                Text(
+                  _getMonthName(displayedMonth.month),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down),
+              ],
+            ),
+            onSelected: (DateTime date) {
+              setState(() {
+                displayedMonth = date;
+                selectedDate = date;
+              });
+            },
+            itemBuilder: (BuildContext context) {
+              return List.generate(12, (index) {
+                final month = DateTime(displayedMonth.year, index + 1);
+                return PopupMenuItem<DateTime>(
+                  value: month,
+                  child: Text(_getMonthName(month.month)),
+                );
+              });
+            },
+          ),
+          // Year Dropdown
+          PopupMenuButton<int>(
+            child: Row(
+              children: [
+                Text(
+                  '${displayedMonth.year}',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down),
+              ],
+            ),
+            onSelected: (int year) {
+              setState(() {
+                displayedMonth = DateTime(year, displayedMonth.month);
+                selectedDate =
+                    DateTime(year, displayedMonth.month, selectedDate.day);
+              });
+            },
+            itemBuilder: (BuildContext context) {
+              final currentYear = DateTime.now().year;
+              return List.generate(5, (index) {
+                final year = currentYear - 2 + index;
+                return PopupMenuItem<int>(
+                  value: year,
+                  child: Text('$year'),
+                );
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Update the task tabs to be tappable
+  Widget _buildTaskTabs() {
+    return Padding(
+      padding: EdgeInsets.all(16),
+      child: Row(
+        children: [
+          _buildTab('All tasks', !showMyTasksOnly, () {
+            setState(() => showMyTasksOnly = false);
+          }),
+          SizedBox(width: 16),
+          _buildTab('My tasks', showMyTasksOnly, () {
+            setState(() => showMyTasksOnly = true);
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTab(String text, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: isSelected
+              ? [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 5)]
+              : null,
+        ),
+        child: Row(
+          children: [
+            Text(
+              text,
+              style: TextStyle(
+                color: isSelected ? Colors.black : Colors.grey,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            if (isSelected) ...[
+              SizedBox(width: 4),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: currentCategoryColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${todos.length}',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Update the add task method to save todos
 
   bool _hasTasksOnDate(DateTime date) {
     return todos.any((todo) {
@@ -247,57 +389,6 @@ class _TodoListState extends State<TodoList> {
         onPressed: () => _showAddTaskDialog(),
         backgroundColor: currentCategoryColor,
         child: Icon(Icons.add, color: Colors.white),
-      ),
-    );
-  }
-
-  Widget _buildTaskTabs() {
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: Row(
-        children: [
-          _buildTab('All tasks', true),
-          SizedBox(width: 16),
-          _buildTab('My tasks', false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTab(String text, bool isSelected) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      decoration: BoxDecoration(
-        color: isSelected ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: isSelected
-            ? [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 5)]
-            : null,
-      ),
-      child: Row(
-        children: [
-          Text(
-            text,
-            style: TextStyle(
-              color: isSelected ? Colors.black : Colors.grey,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-          if (isSelected) ...[
-            SizedBox(width: 4),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: currentCategoryColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${todos.length}',
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -563,79 +654,6 @@ class _TodoListState extends State<TodoList> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildMonthYearSelector() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Month Dropdown
-          PopupMenuButton<DateTime>(
-            child: Row(
-              children: [
-                Text(
-                  '${_getMonthName(displayedMonth.month)} ${displayedMonth.year}',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Icon(Icons.arrow_drop_down),
-              ],
-            ),
-            onSelected: (DateTime date) {
-              setState(() {
-                displayedMonth = date;
-                selectedDate = date;
-              });
-            },
-            itemBuilder: (BuildContext context) {
-              return List.generate(12, (index) {
-                final month = DateTime(displayedMonth.year, index + 1);
-                return PopupMenuItem<DateTime>(
-                  value: month,
-                  child: Text(_getMonthName(month.month)),
-                );
-              });
-            },
-          ),
-          // Year Dropdown
-          PopupMenuButton<int>(
-            child: Row(
-              children: [
-                Text(
-                  '${displayedMonth.year}',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Icon(Icons.arrow_drop_down),
-              ],
-            ),
-            onSelected: (int year) {
-              setState(() {
-                displayedMonth = DateTime(year, displayedMonth.month);
-                selectedDate =
-                    DateTime(year, displayedMonth.month, selectedDate.day);
-              });
-            },
-            itemBuilder: (BuildContext context) {
-              final currentYear = DateTime.now().year;
-              return List.generate(5, (index) {
-                final year = currentYear - 2 + index;
-                return PopupMenuItem<int>(
-                  value: year,
-                  child: Text('$year'),
-                );
-              });
-            },
-          ),
-        ],
       ),
     );
   }

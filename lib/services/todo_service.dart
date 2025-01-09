@@ -91,53 +91,5 @@ Map<String, dynamic> toJson() {
     'categoryColor': categoryColor.value,
   };
 }
-}
 
-// Storage service class
-class TodoStorage {
-  static const String _storageKey = 'todo_lists';
-
-  // Load all todo lists
-  static Future<List<TodoListData>> loadTodoLists() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? jsonString = prefs.getString(_storageKey);
-
-    if (jsonString == null) {
-      return [];
-    }
-
-    final List<dynamic> jsonList = jsonDecode(jsonString);
-    return jsonList.map((json) => TodoListData.fromJson(json)).toList();
-  }
-
-  // Save all todo lists
-  static Future<void> saveTodoLists(List<TodoListData> lists) async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = jsonEncode(lists.map((list) => list.toJson()).toList());
-    await prefs.setString(_storageKey, jsonString);
-  }
-
-  // Add a new todo list
-  static Future<void> addTodoList(TodoListData todoList) async {
-    final lists = await loadTodoLists();
-    lists.add(todoList);
-    await saveTodoLists(lists);
-  }
-
-  // Update an existing todo list
-  static Future<void> updateTodoList(TodoListData updatedList) async {
-    final lists = await loadTodoLists();
-    final index = lists.indexWhere((list) => list.title == updatedList.title);
-    if (index != -1) {
-      lists[index] = updatedList;
-      await saveTodoLists(lists);
-    }
-  }
-
-  // Delete a todo list
-  static Future<void> deleteTodoList(String title) async {
-    final lists = await loadTodoLists();
-    lists.removeWhere((list) => list.title == title);
-    await saveTodoLists(lists);
-  }
 }
