@@ -25,7 +25,26 @@ class _TodoListState extends State<TodoList> {
   bool isLoading = true;
   final ScrollController _calendarScrollController = ScrollController();
   StreamSubscription? _todoSubscription; // Add this
+  final TodoStorage _todoStorage = TodoStorage();
 
+  List<TodoItem> _getTasksForSelectedDate() {
+    return todos.where((todo) {
+      final todoDate = todo.dueDate;
+      final isMatchingDate = todoDate.year == selectedDate.year &&
+          todoDate.month == selectedDate.month &&
+          todoDate.day == selectedDate.day;
+
+      // Debug print
+      print('Todo: ${todo.title}');
+      print('Todo date: ${todoDate}');
+      print('Selected date: $selectedDate');
+      print('Is matching: $isMatchingDate');
+
+      return isMatchingDate;
+    }).toList();
+  }
+
+// Add debug print in initState
   @override
   void initState() {
     super.initState();
@@ -34,31 +53,25 @@ class _TodoListState extends State<TodoList> {
     currentCategory = widget.todoListData?.category ?? 'Personal';
     currentCategoryColor = widget.todoListData?.categoryColor ?? Colors.indigo;
     todos = [];
+    print('InitState called - loading todos');
     _loadTodos();
   }
 
-  @override
-  void dispose() {
-    _todoSubscription?.cancel(); // Cancel subscription when disposing
-    super.dispose();
-  }
-
-  final TodoStorage _todoStorage = TodoStorage();
+// Update _loadTodos to include debug information
   Future<void> _loadTodos() async {
     try {
-      // Set loading state only initially
       if (todos.isEmpty) {
         setState(() {
           isLoading = true;
         });
       }
 
-      // Cancel existing subscription if any
       await _todoSubscription?.cancel();
 
-      // Create new subscription
       _todoSubscription = _todoStorage.getTodosStream().listen(
         (updatedTodos) {
+          print(
+              'Received ${updatedTodos.length} todos from stream'); // Debug print
           setState(() {
             todos = updatedTodos;
             isLoading = false;
@@ -77,6 +90,12 @@ class _TodoListState extends State<TodoList> {
         isLoading = false;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _todoSubscription?.cancel(); // Cancel subscription when disposing
+    super.dispose();
   }
 
   // Update the build method to remove duplicate year display
@@ -192,17 +211,7 @@ class _TodoListState extends State<TodoList> {
     });
   }
 
-  List<TodoItem> _getTasksForSelectedDate() {
-    return todos.where((todo) {
-      final todoDate = todo.dueDate; // Changed from createdAt to dueDate
-      return todoDate.year == selectedDate.year &&
-          todoDate.month == selectedDate.month &&
-          todoDate.day == selectedDate.day;
-    }).toList();
-  }
-// Part 1: Task Input Validation and Dialog remains the same as before, just remove the star icon related code
-
-// Part 2: Updated Task List Item Display with improved UI
+// In _buildTaskList(), wrap the ListView in a Container with defined constraints:
   Widget _buildTaskList() {
     final tasksForDate = _getTasksForSelectedDate();
 
@@ -238,113 +247,132 @@ class _TodoListState extends State<TodoList> {
       );
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: tasksForDate.length,
-      itemBuilder: (context, index) {
-        final todo = tasksForDate[index];
+    return LayoutBuilder(
+      builder: (context, constraints) {
         return Container(
-          margin: EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: currentCategoryColor.withOpacity(0.08),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
+          constraints: BoxConstraints(
+            maxHeight: constraints.maxHeight,
+            maxWidth: constraints.maxWidth,
           ),
-          child: ListTile(
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: InkWell(
-              onTap: () {
-                setState(() {
-                  todo.isCompleted = !todo.isCompleted;
-                  todo.completedAt = todo.isCompleted ? DateTime.now() : null;
-                });
-              },
-              child: Container(
-                width: 24,
-                height: 24,
+          child: ListView.builder(
+            shrinkWrap: true,
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            itemCount: tasksForDate.length,
+            itemBuilder: (context, index) {
+              final todo = tasksForDate[index];
+              return Container(
+                margin: EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: todo.isCompleted
-                      ? currentCategoryColor
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: todo.isCompleted
-                        ? currentCategoryColor
-                        : Colors.grey[400]!,
-                    width: 2,
-                  ),
-                ),
-                child: todo.isCompleted
-                    ? Icon(
-                        Icons.check,
-                        size: 16,
-                        color: Colors.white,
-                      )
-                    : null,
-              ),
-            ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  todo.title.isEmpty ? 'Untitled Task' : todo.title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    decoration:
-                        todo.isCompleted ? TextDecoration.lineThrough : null,
-                    color: todo.isCompleted ? Colors.grey[400] : Colors.black87,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  todo.description,
-                  style: TextStyle(
-                    fontSize: 14,
-                    decoration:
-                        todo.isCompleted ? TextDecoration.lineThrough : null,
-                    color:
-                        todo.isCompleted ? Colors.grey[400] : Colors.grey[600],
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-            trailing: todo.dueTime != null
-                ? Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: currentCategoryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: currentCategoryColor.withOpacity(0.08),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.access_time,
-                          size: 14,
-                          color: currentCategoryColor,
+                  ],
+                ),
+                child: ListTile(
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: Checkbox(
+                    value: todo.isCompleted,
+                    onChanged: (bool? value) async {
+                      if (value != null) {
+                        bool wasCompleted = todo.isCompleted;
+                        setState(() {
+                          todo.isCompleted = value;
+                          todo.completedAt = value ? DateTime.now() : null;
+                        });
+
+                        try {
+                          await _todoStorage.updateTodoStatus(todo.id, value);
+                        } catch (e) {
+                          setState(() {
+                            todo.isCompleted = wasCompleted;
+                            todo.completedAt =
+                                wasCompleted ? DateTime.now() : null;
+                          });
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to update task status'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    activeColor: currentCategoryColor,
+                  ),
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        todo.title.isEmpty ? 'Untitled Task' : todo.title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          decoration: todo.isCompleted
+                              ? TextDecoration.lineThrough
+                              : null,
+                          color: todo.isCompleted
+                              ? Colors.grey[400]
+                              : Colors.black87,
                         ),
-                        SizedBox(width: 4),
+                      ),
+                      if (todo.description.isNotEmpty) ...[
+                        SizedBox(height: 4),
                         Text(
-                          todo.dueTime!.format(context),
+                          todo.description,
                           style: TextStyle(
-                            color: currentCategoryColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                            decoration: todo.isCompleted
+                                ? TextDecoration.lineThrough
+                                : null,
+                            color: todo.isCompleted
+                                ? Colors.grey[400]
+                                : Colors.grey[600],
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
-                    ),
-                  )
-                : null,
+                    ],
+                  ),
+                  trailing: todo.dueTime != null
+                      ? Container(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: currentCategoryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: 14,
+                                color: currentCategoryColor,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                todo.dueTime!.format(context),
+                                style: TextStyle(
+                                  color: currentCategoryColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : null,
+                ),
+              );
+            },
           ),
         );
       },
@@ -940,72 +968,76 @@ class _TodoListState extends State<TodoList> {
                         ),
 
                         SizedBox(height: 24),
-                       ElevatedButton(
-    onPressed: () async {
-      setState(() {
-        showDescriptionError = descriptionController.text.trim().isEmpty;
-      });
+                        ElevatedButton(
+                          onPressed: () async {
+                            setState(() {
+                              showDescriptionError =
+                                  descriptionController.text.trim().isEmpty;
+                            });
 
-      if (!showDescriptionError) {
-        final newTodo = TodoItem(
-          title: titleController.text.trim(),
-          description: descriptionController.text.trim(),
-          createdAt: DateTime.now(),
-          dueDate: selectedDueDate,
-          dueTime: selectedDueTime,
-        );
-        
-        try {
-          // Show loading indicator
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(currentCategoryColor),
-              ),
-            ),
-          );
+                            if (!showDescriptionError) {
+                              final newTodo = TodoItem(
+                                title: titleController.text.trim(),
+                                description: descriptionController.text.trim(),
+                                createdAt: DateTime.now(),
+                                dueDate: selectedDueDate,
+                                dueTime: selectedDueTime,
+                              );
 
-          await _todoStorage.createTodo(newTodo);
-          
-          // Close loading indicator and dialog
-          Navigator.of(context).pop(); // Close loading indicator
-          Navigator.of(context).pop(); // Close add task dialog
-          
-          // Show success message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Task added successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } catch (e) {
-          // Close loading indicator if still showing
-          Navigator.of(context).pop();
-          
-          // Show error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                e.toString().contains('PERMISSION_DENIED') 
-                  ? 'Permission denied. Please sign in again.'
-                  : 'Failed to add task. Please try again.',
-              ),
-              backgroundColor: Colors.red,
-              action: SnackBarAction(
-                label: 'Retry',
-                textColor: Colors.white,
-                onPressed: () {
-                  // Add retry logic here
-                  _todoStorage.createTodo(newTodo);
-                },
-              ),
-            ),
-          );
-        }
-      }
-    },
+                              try {
+                                // Show loading indicator
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (context) => Center(
+                                    child: CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          currentCategoryColor),
+                                    ),
+                                  ),
+                                );
+
+                                await _todoStorage.createTodo(newTodo);
+
+                                // Close loading indicator and dialog
+                                Navigator.of(context)
+                                    .pop(); // Close loading indicator
+                                Navigator.of(context)
+                                    .pop(); // Close add task dialog
+
+                                // Show success message
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Task added successfully'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              } catch (e) {
+                                // Close loading indicator if still showing
+                                Navigator.of(context).pop();
+
+                                // Show error message
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      e.toString().contains('PERMISSION_DENIED')
+                                          ? 'Permission denied. Please sign in again.'
+                                          : 'Failed to add task. Please try again.',
+                                    ),
+                                    backgroundColor: Colors.red,
+                                    action: SnackBarAction(
+                                      label: 'Retry',
+                                      textColor: Colors.white,
+                                      onPressed: () {
+                                        // Add retry logic here
+                                        _todoStorage.createTodo(newTodo);
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
                           child: Padding(
                             padding: EdgeInsets.symmetric(vertical: 12),
                             child: Text(

@@ -25,28 +25,57 @@ class TodoItem {
     this.isCompleted = false,
     this.completedAt,
   });
-
-  factory TodoItem.fromFirestore(String id, Map<String, dynamic> data) {
+factory TodoItem.fromFirestore(String id, Map<String, dynamic> data) {
+    print('Converting document $id to TodoItem'); // Debug print
+    
     TimeOfDay? dueTime;
     if (data['dueTime'] != null) {
-      final timeParts = data['dueTime'].split(':');
-      dueTime = TimeOfDay(
-        hour: int.parse(timeParts[0]),
-        minute: int.parse(timeParts[1]),
-      );
+      try {
+        final timeParts = data['dueTime'].split(':');
+        dueTime = TimeOfDay(
+          hour: int.parse(timeParts[0]),
+          minute: int.parse(timeParts[1]),
+        );
+      } catch (e) {
+        print('Error parsing dueTime: $e');
+      }
+    }
+
+    // Handle potential null or invalid data
+    DateTime createdAt;
+    try {
+      createdAt = (data['createdAt'] as Timestamp).toDate();
+    } catch (e) {
+      print('Error parsing createdAt: $e');
+      createdAt = DateTime.now();
+    }
+
+    DateTime dueDate;
+    try {
+      dueDate = (data['dueDate'] as Timestamp).toDate();
+    } catch (e) {
+      print('Error parsing dueDate: $e');
+      dueDate = DateTime.now();
+    }
+
+    DateTime? completedAt;
+    if (data['completedAt'] != null) {
+      try {
+        completedAt = (data['completedAt'] as Timestamp).toDate();
+      } catch (e) {
+        print('Error parsing completedAt: $e');
+      }
     }
 
     return TodoItem(
       id: id,
       title: data['title'] ?? '',
       description: data['description'] ?? '',
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      dueDate: (data['dueDate'] as Timestamp).toDate(),
+      createdAt: createdAt,
+      dueDate: dueDate,
       dueTime: dueTime,
       isCompleted: data['isCompleted'] ?? false,
-      completedAt: data['completedAt'] != null
-          ? (data['completedAt'] as Timestamp).toDate()
-          : null,
+      completedAt: completedAt,
     );
   }
 
