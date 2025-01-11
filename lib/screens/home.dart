@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:to_do_app/pages/profile_page.dart';
-import 'package:to_do_app/services/todo_service.dart';
-import 'package:to_do_app/services/to_do_storage.dart';
+import 'package:to_do_app/screens/profile_page.dart';
+import 'package:to_do_app/data/todo_service.dart';
+import 'package:to_do_app/data/to_do_storage.dart';
 
 class TodoList extends StatefulWidget {
   final TodoListData? existingTodoList;
@@ -13,7 +15,6 @@ class TodoList extends StatefulWidget {
   _TodoListState createState() => _TodoListState();
 }
 
-// Update the TodoList state class
 class _TodoListState extends State<TodoList> {
   late List<TodoItem> todos;
   late DateTime selectedDate;
@@ -21,8 +22,9 @@ class _TodoListState extends State<TodoList> {
   late String currentCategory;
   late Color currentCategoryColor;
   bool showMyTasksOnly = false;
-  final TextEditingController newTodoController = TextEditingController();
+  bool isLoading = true;
   final ScrollController _calendarScrollController = ScrollController();
+  StreamSubscription? _todoSubscription; // Add this
 
   @override
   void initState() {
@@ -31,14 +33,50 @@ class _TodoListState extends State<TodoList> {
     displayedMonth = DateTime.now();
     currentCategory = widget.todoListData?.category ?? 'Personal';
     currentCategoryColor = widget.todoListData?.categoryColor ?? Colors.indigo;
+    todos = [];
     _loadTodos();
   }
 
+  @override
+  void dispose() {
+    _todoSubscription?.cancel(); // Cancel subscription when disposing
+    super.dispose();
+  }
+
+  final TodoStorage _todoStorage = TodoStorage();
   Future<void> _loadTodos() async {
-    final loadedTodos = await TodoStorage.loadTodos();
-    setState(() {
-      todos = loadedTodos;
-    });
+    try {
+      // Set loading state only initially
+      if (todos.isEmpty) {
+        setState(() {
+          isLoading = true;
+        });
+      }
+
+      // Cancel existing subscription if any
+      await _todoSubscription?.cancel();
+
+      // Create new subscription
+      _todoSubscription = _todoStorage.getTodosStream().listen(
+        (updatedTodos) {
+          setState(() {
+            todos = updatedTodos;
+            isLoading = false;
+          });
+        },
+        onError: (error) {
+          print('Error loading todos: $error');
+          setState(() {
+            isLoading = false;
+          });
+        },
+      );
+    } catch (e) {
+      print('Error setting up todos stream: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   // Update the build method to remove duplicate year display
@@ -79,37 +117,6 @@ class _TodoListState extends State<TodoList> {
             },
           ),
           // Year Dropdown
-          PopupMenuButton<int>(
-            child: Row(
-              children: [
-                Text(
-                  '${displayedMonth.year}',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Icon(Icons.arrow_drop_down),
-              ],
-            ),
-            onSelected: (int year) {
-              setState(() {
-                displayedMonth = DateTime(year, displayedMonth.month);
-                selectedDate =
-                    DateTime(year, displayedMonth.month, selectedDate.day);
-              });
-            },
-            itemBuilder: (BuildContext context) {
-              final currentYear = DateTime.now().year;
-              return List.generate(5, (index) {
-                final year = currentYear - 2 + index;
-                return PopupMenuItem<int>(
-                  value: year,
-                  child: Text('$year'),
-                );
-              });
-            },
-          ),
         ],
       ),
     );
@@ -500,6 +507,12 @@ class _TodoListState extends State<TodoList> {
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
@@ -927,30 +940,72 @@ class _TodoListState extends State<TodoList> {
                         ),
 
                         SizedBox(height: 24),
+                       ElevatedButton(
+    onPressed: () async {
+      setState(() {
+        showDescriptionError = descriptionController.text.trim().isEmpty;
+      });
 
-                        // Add Task Button
-                        // Updated Add Task Button
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              showDescriptionError =
-                                  descriptionController.text.trim().isEmpty;
-                            });
+      if (!showDescriptionError) {
+        final newTodo = TodoItem(
+          title: titleController.text.trim(),
+          description: descriptionController.text.trim(),
+          createdAt: DateTime.now(),
+          dueDate: selectedDueDate,
+          dueTime: selectedDueTime,
+        );
+        
+        try {
+          // Show loading indicator
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(currentCategoryColor),
+              ),
+            ),
+          );
 
-                            if (!showDescriptionError) {
-                              setState(() {
-                                todos.add(TodoItem(
-                                  title: titleController.text.trim(),
-                                  description:
-                                      descriptionController.text.trim(),
-                                  createdAt: DateTime.now(),
-                                  dueDate: selectedDueDate,
-                                  dueTime: selectedDueTime,
-                                ));
-                              });
-                              Navigator.pop(context);
-                            }
-                          },
+          await _todoStorage.createTodo(newTodo);
+          
+          // Close loading indicator and dialog
+          Navigator.of(context).pop(); // Close loading indicator
+          Navigator.of(context).pop(); // Close add task dialog
+          
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Task added successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } catch (e) {
+          // Close loading indicator if still showing
+          Navigator.of(context).pop();
+          
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                e.toString().contains('PERMISSION_DENIED') 
+                  ? 'Permission denied. Please sign in again.'
+                  : 'Failed to add task. Please try again.',
+              ),
+              backgroundColor: Colors.red,
+              action: SnackBarAction(
+                label: 'Retry',
+                textColor: Colors.white,
+                onPressed: () {
+                  // Add retry logic here
+                  _todoStorage.createTodo(newTodo);
+                },
+              ),
+            ),
+          );
+        }
+      }
+    },
                           child: Padding(
                             padding: EdgeInsets.symmetric(vertical: 12),
                             child: Text(
@@ -964,7 +1019,7 @@ class _TodoListState extends State<TodoList> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                        ),
+                        )
                       ],
                     ),
                   ),
