@@ -1,7 +1,5 @@
-// First, let's modify the build method in TodoList to add the profile icon
-// Update the build method in _TodoListState:
-
 import 'package:flutter/material.dart';
+import 'package:percent_indicator/circular_percent_indicator.dart';
 import 'package:to_do_app/data/to_do_storage.dart';
 import 'package:to_do_app/data/todo_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,7 +7,6 @@ import 'package:to_do_app/data/auth_service.dart';
 
 class ProfilePage extends StatelessWidget {
   final List<TodoItem> todos;
-
   ProfilePage({Key? key, required this.todos}) : super(key: key);
 
   final TodoStorage _todoStorage = TodoStorage();
@@ -20,165 +17,449 @@ class ProfilePage extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-        backgroundColor: Colors.grey[100],
-        appBar: AppBar(
-          title: Text(
-            'Profile',
-            style:
-                TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: Colors.black87),
-            onPressed: () => Navigator.pop(context),
-          ),
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: Text(
+          'Profile',
+          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
-        body: StreamBuilder<List<TodoItem>>(
-            stream: _todoStorage.getTodosStream(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return Center(child: CircularProgressIndicator());
-              }
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: StreamBuilder<List<TodoItem>>(
+        stream: _todoStorage.getTodosStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
 
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
 
-              final todos = snapshot.data ?? [];
-              final completedTasks =
-                  todos.where((todo) => todo.isCompleted).toList();
-              final upcomingTasks = todos
-                  .where((todo) => !todo.isCompleted)
-                  .toList()
-                ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+          final todos = snapshot.data ?? [];
+          final completedTasks =
+              todos.where((todo) => todo.isCompleted).toList();
 
-              // Get overdue tasks
-              final now = DateTime.now();
-              final overdueTasks = upcomingTasks
-                  .where((todo) => todo.dueDate.isBefore(now))
-                  .toList();
+          // Get start of today
+          final now = DateTime.now();
+          final startOfToday = DateTime(now.year, now.month, now.day);
 
-              return SingleChildScrollView(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ... (previous profile header code remains the same)
+          // Get overdue tasks (tasks due before today and not completed)
+          final overdueTasks = todos
+              .where((todo) =>
+                  !todo.isCompleted && todo.dueDate.isBefore(startOfToday))
+              .toList()
+            ..sort(
+                (a, b) => b.dueDate.compareTo(a.dueDate)); // Most recent first
 
-                      // Add Overdue Tasks Section
-                      if (overdueTasks.isNotEmpty) ...[
-                        SizedBox(height: 32),
-                        Text(
-                          'Overdue Tasks',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
+          final upcomingTasks = todos
+              .where((todo) =>
+                  !todo.isCompleted && !todo.dueDate.isBefore(startOfToday))
+              .toList()
+            ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Profile Header
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 40,
+                          backgroundColor: Colors.blue[100],
+                          child:
+                              Icon(Icons.person, size: 40, color: Colors.blue),
+                        ),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                user?.displayName ?? 'User',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                user?.email ?? '',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        SizedBox(height: 8),
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: NeverScrollableScrollPhysics(),
-                          itemCount: overdueTasks.length,
-                          itemBuilder: (context, index) {
-                            final todo = overdueTasks[index];
-                            return Card(
-                              margin: EdgeInsets.only(bottom: 8),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: ListTile(
-                                title: Text(
-                                  todo.title,
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(todo.description),
-                                    Text(
-                                      'Due: ${_formatDate(todo.dueDate)}',
-                                      style: TextStyle(color: Colors.red),
-                                    ),
-                                  ],
-                                ),
-                                trailing: IconButton(
-                                  icon: Icon(Icons.check_circle_outline),
-                                  onPressed: () async {
-                                    await _todoStorage.updateTodoStatus(
-                                        todo.id!, true);
-                                  },
-                                ),
-                              ),
-                            );
-                          },
-                        ),
                       ],
+                    ),
+                  ),
+                ),
 
-                      // Settings Section
-                      SizedBox(height: 32),
+                // Progress Statistics
+                SizedBox(height: 24),
+                Row(
+                  children: [
+                    _buildStatCard(
+                      context,
+                      'Completed',
+                      '${completedTasks.length}',
+                      Icons.check_circle,
+                      Colors.green,
+                    ),
+                    SizedBox(width: 16),
+                    _buildStatCard(
+                      context,
+                      'Upcoming',
+                      '${upcomingTasks.length}',
+                      Icons.pending_actions,
+                      Colors.orange,
+                    ),
+                    SizedBox(width: 16),
+                    _buildStatCard(
+                      context,
+                      'Past Due',
+                      '${overdueTasks.length}',
+                      Icons.warning,
+                      Colors.red,
+                    ),
+                  ],
+                ),
+                if (overdueTasks.isNotEmpty) ...[
+                  SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
                       Text(
-                        'Settings',
+                        'Past Due Tasks',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
+                          color: Colors.red,
                         ),
                       ),
-                      SizedBox(height: 8),
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        child: Column(
-                          children: [
-                            _buildSettingsTile(
-                              'Notifications',
-                              Icons.notifications,
-                              Colors.red,
-                              context,
-                            ),
-                            Divider(height: 1),
-                            _buildSettingsTile(
-                              'Theme',
-                              Icons.palette,
-                              Colors.purple,
-                              context,
-                            ),
-                            Divider(height: 1),
-                            _buildSettingsTile(
-                              'Categories',
-                              Icons.category,
-                              Colors.green,
-                              context,
-                            ),
-                            Divider(height: 1),
-                            _buildSettingsTile(
-                              'Backup & Sync',
-                              Icons.sync,
-                              Colors.blue,
-                              context,
-                            ),
-                            _buildSettingsTile(
-                              'Sign Out',
-                              Icons.logout,
-                              Colors.red,
-                              context,
-                              onTap: () async {
-                                await _authService.signOut();
-                                Navigator.pushReplacementNamed(
-                                    context, '/login');
-                              },
-                            ),
-                          ],
+                      Text(
+                        'Due dates passed',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
-                  ));
-            }));
+                  ),
+                  SizedBox(height: 8),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                      childAspectRatio: 1.2,
+                    ),
+                    itemCount: overdueTasks.length,
+                    itemBuilder: (context, index) {
+                      final todo = overdueTasks[index];
+                      final daysOverdue =
+                          startOfToday.difference(todo.dueDate).inDays;
+
+                      return Card(
+                        color: Colors.red[50],
+                        child: InkWell(
+                          onTap: () => _showRescheduleDialog(context, todo),
+                          child: Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  todo.title,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  todo.description,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Spacer(),
+                                Text(
+                                  'Due: ${_formatDate(todo.dueDate)}',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  '$daysOverdue ${daysOverdue == 1 ? 'day' : 'days'} overdue',
+                                  style: TextStyle(
+                                    color: Colors.red[700],
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          _showRescheduleDialog(context, todo),
+                                      child: Text('Reschedule'),
+                                      style: TextButton.styleFrom(
+                                        padding:
+                                            EdgeInsets.symmetric(horizontal: 8),
+                                        minimumSize: Size(60, 30),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(Icons.check_circle_outline),
+                                      onPressed: () async {
+                                        await _todoStorage.updateTodoStatus(
+                                            todo.id, true);
+                                      },
+                                      padding: EdgeInsets.zero,
+                                      constraints: BoxConstraints(),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+
+                // Task Progress Timeline
+                SizedBox(height: 24),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Task Progress',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 16),
+                        CircularPercentIndicator(
+                          radius: 35.0,
+                          lineWidth: 10.0,
+                          percent: todos.isEmpty
+                              ? 0
+                              : completedTasks.length / todos.length,
+                          center: Text(
+                            '${((completedTasks.length / todos.length) * 100).toStringAsFixed(1)}%',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16.0),
+                          ),
+                          progressColor: Colors.blue,
+                          backgroundColor: Colors.grey[200]!,
+                          circularStrokeCap: CircularStrokeCap.round,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          '${((completedTasks.length / todos.length) * 100).toStringAsFixed(1)}% Complete',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Overdue Tasks Grid
+                if (overdueTasks.isNotEmpty) ...[
+                  SizedBox(height: 24),
+                  Text(
+                    'Overdue Tasks',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                      childAspectRatio: 1.2,
+                    ),
+                    itemCount: overdueTasks.length,
+                    itemBuilder: (context, index) {
+                      final todo = overdueTasks[index];
+                      return Card(
+                        color: Colors.red[50],
+                        child: InkWell(
+                          onTap: () => _showRescheduleDialog(context, todo),
+                          child: Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  todo.title,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Spacer(),
+                                Text(
+                                  'Due: ${_formatDate(todo.dueDate)}',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          _showRescheduleDialog(context, todo),
+                                      child: Text('Reschedule'),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(Icons.check_circle_outline),
+                                      onPressed: () async {
+                                        await _todoStorage.updateTodoStatus(
+                                            todo.id, true);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+
+                // Settings Section (remaining code stays the same)
+                SizedBox(height: 32),
+                Text(
+                  'Settings',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildSettingsTile(
+                        'Notifications',
+                        Icons.notifications,
+                        Colors.red,
+                        context,
+                      ),
+                      Divider(height: 1),
+                      _buildSettingsTile(
+                        'Theme',
+                        Icons.palette,
+                        Colors.purple,
+                        context,
+                      ),
+                      Divider(height: 1),
+                      _buildSettingsTile(
+                        'Categories',
+                        Icons.category,
+                        Colors.green,
+                        context,
+                      ),
+                      Divider(height: 1),
+                      _buildSettingsTile(
+                        'Backup & Sync',
+                        Icons.sync,
+                        Colors.blue,
+                        context,
+                      ),
+                      _buildSettingsTile(
+                        'Sign Out',
+                        Icons.logout,
+                        Colors.red,
+                        context,
+                        onTap: () async {
+                          await _authService.signOut();
+                          Navigator.pushReplacementNamed(context, '/login');
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
+  Future<void> _showRescheduleDialog(
+      BuildContext context, TodoItem todo) async {
+    DateTime? newDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(Duration(days: 365)),
+    );
+
+    if (newDate != null) {
+      // Update the todo with new date
+      // You'll need to implement this method in your TodoStorage class
+      await _todoStorage.updateTodoDate(todo.id, newDate);
+    }
+  }
+
+  // Existing helper methods remain the same
   Widget _buildStatCard(BuildContext context, String title, String value,
       IconData icon, Color color) {
     return Expanded(
@@ -215,28 +496,6 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _buildTimelineItem(String label, DateTime date) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.grey[600],
-            fontSize: 14,
-          ),
-        ),
-        Text(
-          '${date.day}/${date.month}/${date.year}',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildSettingsTile(
       String title, IconData icon, Color color, BuildContext context,
       {VoidCallback? onTap}) {
@@ -253,7 +512,6 @@ class ProfilePage extends StatelessWidget {
       trailing: Icon(Icons.chevron_right),
       onTap: onTap ??
           () {
-            // Default behavior if no onTap provided
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('$title settings coming soon')),
             );

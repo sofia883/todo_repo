@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:to_do_app/data/todo_service.dart';
 
 // Storage service class
-  class TodoStorage {
+class TodoStorage {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -23,12 +23,12 @@ import 'package:to_do_app/data/todo_service.dart';
         'description': todo.description,
         'createdAt': Timestamp.fromDate(todo.createdAt),
         'dueDate': Timestamp.fromDate(todo.dueDate),
-        'dueTime': todo.dueTime != null 
-            ? '${todo.dueTime!.hour}:${todo.dueTime!.minute}' 
+        'dueTime': todo.dueTime != null
+            ? '${todo.dueTime!.hour}:${todo.dueTime!.minute}'
             : null,
         'isCompleted': todo.isCompleted,
-        'completedAt': todo.completedAt != null 
-            ? Timestamp.fromDate(todo.completedAt!) 
+        'completedAt': todo.completedAt != null
+            ? Timestamp.fromDate(todo.completedAt!)
             : null,
       };
 
@@ -57,23 +57,18 @@ import 'package:to_do_app/data/todo_service.dart';
         .orderBy('createdAt', descending: true) // Add ordering
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            // Print for debugging
-            print('Document ID: ${doc.id}');
-            print('Document data: ${doc.data()}');
-            
-            return TodoItem.fromFirestore(doc.id, doc.data());
-          }).toList();
-        });
-  }
+      return snapshot.docs.map((doc) {
+        // Print for debugging
+        print('Document ID: ${doc.id}');
+        print('Document data: ${doc.data()}');
 
+        return TodoItem.fromFirestore(doc.id, doc.data());
+      }).toList();
+    });
+  }
 
   // Get current user ID
   String? get currentUserId => _auth.currentUser?.uid;
-
-  // Get todos collection reference for current user
-  CollectionReference get _todosCollection =>
-      _firestore.collection('users/${currentUserId}/todos');
 
   Future<void> updateTodoStatus(String todoId, bool isCompleted) async {
     final user = _auth.currentUser;
@@ -95,28 +90,26 @@ import 'package:to_do_app/data/todo_service.dart';
       print('Error updating todo status: $e');
       throw Exception('Failed to update todo status: ${e.toString()}');
     }
+  }
 
-    // Get overdue todos
-    Stream<List<TodoItem>> getOverdueTodos() {
-      final now = DateTime.now();
-      return _todosCollection
-          .where('isCompleted', isEqualTo: false)
-          .where('dueDate', isLessThan: now)
-          .snapshots()
-          .map((snapshot) {
-        return snapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return TodoItem.fromFirestore(doc.id, data);
-        }).toList();
-      });
+  Future<void> updateTodoDate(String todoId, DateTime newDate) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
     }
 
-    // Undo task completion
-    Future<void> undoTaskCompletion(String todoId) async {
-      await _todosCollection.doc(todoId).update({
-        'isCompleted': false,
-        'completedAt': null,
+    try {
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('todos')
+          .doc(todoId)
+          .update({
+        'dueDate': Timestamp.fromDate(newDate),
       });
+    } catch (e) {
+      print('Error updating todo date: $e');
+      throw Exception('Failed to update todo date: ${e.toString()}');
     }
   }
 }
