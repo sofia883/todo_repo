@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:to_do_app/screens/profile_page.dart';
 import 'package:to_do_app/data/todo_service.dart';
-import 'package:to_do_app/data/to_do_storage.dart';
+import 'package:uuid/uuid.dart';
 
 class TodoList extends StatefulWidget {
   final TodoListData? existingTodoList;
@@ -26,6 +26,71 @@ class _TodoListState extends State<TodoList> {
   final ScrollController _calendarScrollController = ScrollController();
   StreamSubscription? _todoSubscription; // Add this
   final TodoStorage _todoStorage = TodoStorage();
+  Widget _buildMonthYearSelector() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: PopupMenuButton<DateTime>(
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${_getMonthName(displayedMonth.month)} ${displayedMonth.year}',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              Icon(Icons.arrow_drop_down),
+            ],
+          ),
+        ),
+        onSelected: (DateTime date) {
+          setState(() {
+            displayedMonth = date;
+            selectedDate = date;
+          });
+        },
+        itemBuilder: (BuildContext context) {
+          final currentYear = DateTime.now().year;
+          List<PopupMenuItem<DateTime>> items = [];
+
+          // Generate items for next 2 years
+          for (int year = currentYear; year <= currentYear + 1; year++) {
+            for (int month = 1; month <= 12; month++) {
+              // Skip past months for current year
+              if (year == currentYear && month < DateTime.now().month) continue;
+
+              final date = DateTime(year, month);
+              items.add(
+                PopupMenuItem<DateTime>(
+                  value: date,
+                  child: Text(
+                    '${_getMonthName(month)} $year',
+                    style: GoogleFonts.inter(),
+                  ),
+                ),
+              );
+            }
+          }
+          return items;
+        },
+      ),
+    );
+  }
 
   Future<bool> _showTaskCompletionDialog(TodoItem todo) async {
     bool? result = await showDialog<bool>(
@@ -297,350 +362,294 @@ class _TodoListState extends State<TodoList> {
       });
     }
   }
-Widget _buildTaskList() {
-  if (isLoading) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(currentCategoryColor),
-            strokeWidth: 3,
-          ),
-          SizedBox(height: 16),
-          Text(
-            'Loading your tasks...',
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
+
+// Update the _buildTaskList() method to fix the Dismissible widget issue
+  Widget _buildTaskList() {
+    if (isLoading) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(currentCategoryColor),
+              strokeWidth: 3,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  final tasksForDate = showMyTasksOnly ? _getOverdueTasks() : _getTasksForSelectedDate();
-
-  if (tasksForDate.isEmpty) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.task_alt,
-            size: 64,
-            color: Colors.grey[200],
-          ),
-          SizedBox(height: 16),
-          Text(
-            showMyTasksOnly
-                ? 'No overdue tasks'
-                : 'No tasks for ${_getMonthName(selectedDate.month)} ${selectedDate.day}',
-            style: GoogleFonts.beVietnamPro(
-              color: Colors.black,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              letterSpacing: -0.3,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Tap + to add a new task',
-            style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.7),
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      return Container(
-        constraints: BoxConstraints(
-          maxHeight: constraints.maxHeight,
-          maxWidth: constraints.maxWidth,
-        ),
-        child: ListView.builder(
-          shrinkWrap: true,
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          itemCount: tasksForDate.length,
-          itemBuilder: (context, index) {
-            final todo = tasksForDate[index];
-            final isOverdue = _getOverdueTasks().contains(todo);
-
-            return Dismissible(
-              key: Key(todo.id),
-              direction: DismissDirection.endToStart,
-              confirmDismiss: (direction) async {
-                return await showDialog(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      title: Text(
-                        'Delete Task',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      content: Text(
-                        'Are you sure you want to delete this task?',
-                        style: GoogleFonts.inter(),
-                      ),
-                      actions: <Widget>[
-                        TextButton(
-                          child: Text(
-                            'Cancel',
-                            style: GoogleFonts.inter(
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                          onPressed: () => Navigator.of(context).pop(false),
-                        ),
-                        TextButton(
-                          child: Text(
-                            'Delete',
-                            style: GoogleFonts.inter(
-                              color: Colors.red,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          onPressed: () => Navigator.of(context).pop(true),
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-              onDismissed: (direction) async {
-                try {
-                  await _todoStorage.deleteTodo(todo.id);
-                  setState(() {
-                    tasksForDate.removeAt(index);
-                  });
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Task deleted',
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
-                      ),
-                      action: SnackBarAction(
-                        label: 'Undo',
-                        textColor: Colors.white,
-                        onPressed: () async {
-                          try {
-                            await _todoStorage.restoreTodo(todo);
-                            setState(() {
-                              tasksForDate.insert(index, todo);
-                            });
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Failed to restore task',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                    ),
-                  );
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Failed to delete task',
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
-                      ),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-              background: Container(
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                alignment: Alignment.centerRight,
-                padding: EdgeInsets.only(right: 20),
-                child: Icon(
-                  Icons.delete,
-                  color: Colors.white,
-                ),
+            SizedBox(height: 16),
+            Text(
+              'Loading your tasks...',
+              style: GoogleFonts.poppins(
+                color: Colors.black87,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
               ),
-              child: Container(
-                margin: EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: isOverdue ? Colors.red[50] : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isOverdue
-                          ? const Color.fromARGB(255, 73, 40, 38).withOpacity(0.08)
-                          : currentCategoryColor.withOpacity(0.08),
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: ListTile(
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: Checkbox(
-                    value: todo.isCompleted,
-                    onChanged: (bool? value) async {
-                      if (value != null) {
-                        final shouldComplete =
-                            await _showTaskCompletionDialog(todo);
-                        if (shouldComplete) {
-                          bool wasCompleted = todo.isCompleted;
-                          setState(() {
-                            todo.isCompleted = value;
-                            todo.completedAt = value ? DateTime.now() : null;
-                          });
+            ),
+          ],
+        ),
+      );
+    }
 
-                          try {
-                            await _todoStorage.updateTodoStatus(todo.id, value);
-                          } catch (e) {
-                            setState(() {
-                              todo.isCompleted = wasCompleted;
-                              todo.completedAt =
-                                  wasCompleted ? DateTime.now() : null;
-                            });
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Failed to update task status',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      }
-                    },
-                    activeColor: isOverdue ? Colors.red : currentCategoryColor,
-                  ),
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              todo.title.isEmpty ? 'Untitled Task' : todo.title,
-                              style: GoogleFonts.poppins(
-                                decoration: todo.isCompleted
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                                color: todo.isCompleted
-                                    ? Colors.grey[400]
-                                    : Colors.black87,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w500,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                          if (isOverdue)
-                            TextButton(
-                              onPressed: () =>
-                                  _showRescheduleDialog(context, todo),
-                              child: Text(
-                                'Reschedule',
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.red,
-                              ),
-                            ),
-                        ],
+    final tasksForDate =
+        showMyTasksOnly ? _getOverdueTasks() : _getTasksForSelectedDate();
+
+    if (tasksForDate.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.task_alt, size: 64, color: Colors.grey[300]),
+            SizedBox(height: 16),
+            Text(
+              showMyTasksOnly
+                  ? 'No overdue tasks'
+                  : 'No tasks for ${_getMonthName(selectedDate.month)} ${selectedDate.day}',
+              style: GoogleFonts.beVietnamPro(
+                color: Colors.black87,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: tasksForDate.length,
+      itemBuilder: (context, index) {
+        final todo = tasksForDate[index];
+        final isOverdue = _getOverdueTasks().contains(todo);
+
+        return Container(
+          key: UniqueKey(), // Add this line to ensure unique keys
+          margin: EdgeInsets.only(bottom: 12),
+          child: Dismissible(
+            key: ValueKey(todo.id), // Keep using ValueKey for Dismissible
+            direction: DismissDirection.endToStart,
+            confirmDismiss: (direction) async {
+              final result = await showDialog<bool>(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15)),
+                    title: Text('Delete Task',
+                        style:
+                            GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                    content: Text('Are you sure you want to delete this task?',
+                        style: GoogleFonts.inter()),
+                    actions: <Widget>[
+                      TextButton(
+                        child: Text('Cancel',
+                            style: GoogleFonts.inter(color: Colors.grey[600])),
+                        onPressed: () => Navigator.of(context).pop(false),
                       ),
-                      if (todo.description.isNotEmpty) ...[
-                        SizedBox(height: 4),
-                        Text(
-                          todo.description,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            height: 1.4,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                      TextButton(
+                        child: Text('Delete',
+                            style: GoogleFonts.inter(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600)),
+                        onPressed: () => Navigator.of(context).pop(true),
+                      ),
                     ],
-                  ),
-                  trailing: todo.dueTime != null
-                      ? Container(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isOverdue
-                                ? Colors.red.withOpacity(0.1)
-                                : currentCategoryColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.access_time,
-                                size: 14,
-                                color: isOverdue
-                                    ? Colors.red
-                                    : currentCategoryColor,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                todo.dueTime!.format(context),
-                                style: GoogleFonts.inter(
-                                  color: isOverdue
-                                      ? Colors.red
-                                      : currentCategoryColor,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : null,
-                ),
-              ));
+                  );
+                },
+              );
+              return result ?? false;
             },
+            onDismissed: (direction) async {
+              try {
+                // Remove from storage first
+                await _todoStorage.deleteTodo(todo.id);
+
+                // No need to manually update the local state as the stream will handle it
+
+                if (!mounted) return;
+
+                ScaffoldMessenger.of(context).clearSnackBars();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Task deleted', style: GoogleFonts.inter()),
+                    action: SnackBarAction(
+                      label: 'Undo',
+                      onPressed: () async {
+                        try {
+                          // Restore to storage
+                          await _todoStorage.restoreTodo(todo);
+                          // Stream will handle updating the UI
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to restore task',
+                                  style: GoogleFonts.inter()),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to delete task',
+                        style: GoogleFonts.inter()),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            background: Container(
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              alignment: Alignment.centerRight,
+              padding: EdgeInsets.only(right: 20),
+              child: CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Icon(Icons.delete, color: Colors.red),
+              ),
+            ),
+            child: _buildTaskItem(todo, isOverdue),
           ),
         );
       },
+    );
+  }
+
+// Enhanced task item UI
+  Widget _buildTaskItem(TodoItem todo, bool isOverdue) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isOverdue ? Colors.red[50] : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: isOverdue
+                ? Colors.red.withOpacity(0.08)
+                : currentCategoryColor.withOpacity(0.08),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isOverdue
+                ? Colors.red[100]
+                : currentCategoryColor.withOpacity(0.1),
+          ),
+          child: Checkbox(
+            value: todo.isCompleted,
+            onChanged: (bool? value) async {
+              if (value != null) {
+                final shouldComplete = await _showTaskCompletionDialog(todo);
+                if (shouldComplete) {
+                  bool wasCompleted = todo.isCompleted;
+                  setState(() {
+                    todo.isCompleted = value;
+                    todo.completedAt = value ? DateTime.now() : null;
+                  });
+
+                  try {
+                    await _todoStorage.updateTodoStatus(todo.id, value);
+                  } catch (e) {
+                    setState(() {
+                      todo.isCompleted = wasCompleted;
+                      todo.completedAt = wasCompleted ? DateTime.now() : null;
+                    });
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to update task status'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            activeColor: isOverdue ? Colors.red : currentCategoryColor,
+          ),
+        ),
+        title: Text(
+          todo.title.isEmpty ? 'Untitled Task' : todo.title,
+          style: GoogleFonts.poppins(
+            decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
+            color: todo.isCompleted ? Colors.grey[400] : Colors.black87,
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            height: 1.3,
+          ),
+        ),
+        subtitle: todo.description.isNotEmpty
+            ? Text(
+                todo.description,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  height: 1.4,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              )
+            : null,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (todo.dueTime != null)
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isOverdue
+                      ? Colors.red.withOpacity(0.1)
+                      : currentCategoryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      size: 14,
+                      color: isOverdue ? Colors.red : currentCategoryColor,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      todo.dueTime!.format(context),
+                      style: GoogleFonts.inter(
+                        color: isOverdue ? Colors.red : currentCategoryColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (isOverdue)
+              TextButton(
+                onPressed: () => _showRescheduleDialog(context, todo),
+                child: Text(
+                  'Reschedule',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13,
+                    color: Colors.red,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -650,53 +659,22 @@ Widget _buildTaskList() {
     super.dispose();
   }
 
-  // Update the build method to remove duplicate year display
-  Widget _buildMonthYearSelector() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Month Dropdown
-          PopupMenuButton<DateTime>(
-            child: Row(
-              children: [
-                Text(
-                  _getMonthName(displayedMonth.month),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Icon(Icons.arrow_drop_down),
-              ],
-            ),
-            onSelected: (DateTime date) {
-              setState(() {
-                displayedMonth = date;
-                selectedDate = date;
-              });
-            },
-            itemBuilder: (BuildContext context) {
-              return List.generate(12, (index) {
-                final month = DateTime(displayedMonth.year, index + 1);
-                return PopupMenuItem<DateTime>(
-                  value: month,
-                  child: Text(_getMonthName(month.month)),
-                );
-              });
-            },
-          ),
-          // Year Dropdown
-        ],
-      ),
-    );
-  }
-
   Future<void> _showRescheduleDialog(
       BuildContext context, TodoItem todo) async {
     DateTime selectedDate = todo.dueDate;
     TimeOfDay? selectedTime = todo.dueTime;
+
+    // Get today's date at the start of the day (midnight)
+    final DateTime today = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+
+    // Ensure initialDate is not before firstDate
+    if (selectedDate.isBefore(today)) {
+      selectedDate = today;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -763,7 +741,7 @@ Widget _buildTaskList() {
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: selectedDate,
-                            firstDate: DateTime.now(),
+                            firstDate: today, // Use today as firstDate
                             lastDate: DateTime.now().add(Duration(days: 365)),
                             builder: (context, child) {
                               return Theme(
@@ -1512,9 +1490,10 @@ Widget _buildTaskList() {
                               showDescriptionError =
                                   descriptionController.text.trim().isEmpty;
                             });
-
                             if (!showDescriptionError) {
+                              final uuid = Uuid();
                               final newTodo = TodoItem(
+                                id: uuid.v4(), // Generates a unique UUID string
                                 title: titleController.text.trim(),
                                 description: descriptionController.text.trim(),
                                 createdAt: DateTime.now(),
@@ -1534,7 +1513,7 @@ Widget _buildTaskList() {
                                   ),
                                 );
 
-                                await _todoStorage.createTodo(newTodo);
+                                await _todoStorage.addTodo(newTodo);
 
                                 Navigator.of(context).pop(); // Close loading
                                 Navigator.of(context).pop(); // Close dialog
@@ -1564,7 +1543,7 @@ Widget _buildTaskList() {
                                     label: 'Retry',
                                     textColor: Colors.white,
                                     onPressed: () {
-                                      _todoStorage.createTodo(newTodo);
+                                      _todoStorage.addTodo(newTodo);
                                     },
                                   ),
                                 ));

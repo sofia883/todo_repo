@@ -39,15 +39,10 @@ dependencies:
   flutter_slidable: ^3.1.2
   expandable: ^5.0.1
   shared_preferences: ^2.3.5
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.15.3
-  cloud_firestore: ^4.13.6
   google_sign_in: ^6.1.6
   google_fonts: ^6.2.1
   percent_indicator: ^4.2.4 
-  sqflite: ^2.3.0
-  connectivity_plus: ^5.0.2
-  path: ^1.8.3
+  uuid: ^4.5.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

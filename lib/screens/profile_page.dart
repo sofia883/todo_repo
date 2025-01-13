@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:percent_indicator/circular_percent_indicator.dart';
-import 'package:to_do_app/data/to_do_storage.dart';
 import 'package:to_do_app/data/todo_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:to_do_app/data/auth_service.dart';
 
 class ProfilePage extends StatelessWidget {
@@ -13,8 +11,6 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AuthService _authService = AuthService();
-    final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
@@ -89,14 +85,14 @@ class ProfilePage extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                user?.displayName ?? 'User',
+                                'User',
                                 style: TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                               Text(
-                                user?.email ?? '',
+                                '',
                                 style: TextStyle(
                                   color: Colors.grey[600],
                                   fontSize: 16,
@@ -428,7 +424,6 @@ class ProfilePage extends StatelessWidget {
                         Colors.red,
                         context,
                         onTap: () async {
-                          await _authService.signOut();
                           Navigator.pushReplacementNamed(context, '/login');
                         },
                       ),

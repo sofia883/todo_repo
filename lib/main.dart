@@ -1,12 +1,8 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:to_do_app/screens/home.dart';
-import 'package:to_do_app/screens/login_screen.dart';
+import 'package:to_do_app/screens/welcome_page.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+void main() {
   runApp(MyApp());
 }
 
@@ -17,17 +13,9 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Todo App',
       theme: ThemeData(primarySwatch: Colors.indigo),
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return CircularProgressIndicator();
-          }
-          return snapshot.hasData ? TodoList() : LoginScreen();
-        },
-      ),
+      home: WelcomePage(), // Default to the login screen
       routes: {
-        '/login': (context) => LoginScreen(),
+        '/login': (context) => WelcomePage(),
         '/home': (context) => TodoList(),
       },
     );
