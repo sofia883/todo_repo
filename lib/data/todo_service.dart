@@ -25,9 +25,9 @@ class TodoItem {
     this.isCompleted = false,
     this.completedAt,
   });
-factory TodoItem.fromFirestore(String id, Map<String, dynamic> data) {
+  factory TodoItem.fromFirestore(String id, Map<String, dynamic> data) {
     print('Converting document $id to TodoItem'); // Debug print
-    
+
     TimeOfDay? dueTime;
     if (data['dueTime'] != null) {
       try {
