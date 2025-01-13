@@ -11,7 +11,6 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
@@ -158,97 +157,6 @@ class ProfilePage extends StatelessWidget {
                     ],
                   ),
                   SizedBox(height: 8),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 1.2,
-                    ),
-                    itemCount: overdueTasks.length,
-                    itemBuilder: (context, index) {
-                      final todo = overdueTasks[index];
-                      final daysOverdue =
-                          startOfToday.difference(todo.dueDate).inDays;
-
-                      return Card(
-                        color: Colors.red[50],
-                        child: InkWell(
-                          onTap: () => _showRescheduleDialog(context, todo),
-                          child: Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  todo.title,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  todo.description,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Spacer(),
-                                Text(
-                                  'Due: ${_formatDate(todo.dueDate)}',
-                                  style: TextStyle(
-                                    color: Colors.red,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Text(
-                                  '$daysOverdue ${daysOverdue == 1 ? 'day' : 'days'} overdue',
-                                  style: TextStyle(
-                                    color: Colors.red[700],
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    TextButton(
-                                      onPressed: () =>
-                                          _showRescheduleDialog(context, todo),
-                                      child: Text('Reschedule'),
-                                      style: TextButton.styleFrom(
-                                        padding:
-                                            EdgeInsets.symmetric(horizontal: 8),
-                                        minimumSize: Size(60, 30),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: Icon(Icons.check_circle_outline),
-                                      onPressed: () async {
-                                        await _todoStorage.updateTodoStatus(
-                                            todo.id, true);
-                                      },
-                                      padding: EdgeInsets.zero,
-                                      constraints: BoxConstraints(),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                 ],
 
                 // Task Progress Timeline
@@ -310,69 +218,6 @@ class ProfilePage extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 8),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 1.2,
-                    ),
-                    itemCount: overdueTasks.length,
-                    itemBuilder: (context, index) {
-                      final todo = overdueTasks[index];
-                      return Card(
-                        color: Colors.red[50],
-                        child: InkWell(
-                          onTap: () => _showRescheduleDialog(context, todo),
-                          child: Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  todo.title,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Spacer(),
-                                Text(
-                                  'Due: ${_formatDate(todo.dueDate)}',
-                                  style: TextStyle(
-                                    color: Colors.red,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    TextButton(
-                                      onPressed: () =>
-                                          _showRescheduleDialog(context, todo),
-                                      child: Text('Reschedule'),
-                                    ),
-                                    IconButton(
-                                      icon: Icon(Icons.check_circle_outline),
-                                      onPressed: () async {
-                                        await _todoStorage.updateTodoStatus(
-                                            todo.id, true);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                 ],
 
                 // Settings Section (remaining code stays the same)
@@ -436,22 +281,6 @@ class ProfilePage extends StatelessWidget {
         },
       ),
     );
-  }
-
-  Future<void> _showRescheduleDialog(
-      BuildContext context, TodoItem todo) async {
-    DateTime? newDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(Duration(days: 365)),
-    );
-
-    if (newDate != null) {
-      // Update the todo with new date
-      // You'll need to implement this method in your TodoStorage class
-      await _todoStorage.updateTodoDate(todo.id, newDate);
-    }
   }
 
   // Existing helper methods remain the same

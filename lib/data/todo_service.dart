@@ -262,8 +262,8 @@ class TodoStorage {
     }
   }
 
-  // Update todo date
-  Future<void> updateTodoDate(String todoId, DateTime newDate) async {
+  Future<void> updateTodoDate(
+      String todoId, DateTime newDate, TimeOfDay? newTime) async {
     final todos = await _loadTodos();
     final index = todos.indexWhere((todo) => todo.id == todoId);
     if (index != -1) {
@@ -273,7 +273,7 @@ class TodoStorage {
         description: todos[index].description,
         createdAt: todos[index].createdAt,
         dueDate: newDate,
-        dueTime: todos[index].dueTime,
+        dueTime: newTime, // Update with the new time
         isCompleted: todos[index].isCompleted,
         completedAt: todos[index].completedAt,
       );
