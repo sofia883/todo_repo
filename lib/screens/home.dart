@@ -146,54 +146,54 @@ class _TodoListState extends State<TodoList> {
     return result ?? false;
   }
 
-  List<TodoItem> _getTasksForSelectedDate() {
-    final now = DateTime.now();
-    return todos.where((todo) {
-      if (todo.isCompleted) return false; // Filter out completed tasks
+//   List<TodoItem> _getTasksForSelectedDate() {
+//     final now = DateTime.now();
+//     return todos.where((todo) {
+//       if (todo.isCompleted) return false; // Filter out completed tasks
 
-      final todoDate = todo.dueDate;
-      final todoDateTime = todo.dueTime != null
-          ? DateTime(
-              todoDate.year,
-              todoDate.month,
-              todoDate.day,
-              todo.dueTime!.hour,
-              todo.dueTime!.minute,
-            )
-          : DateTime(todoDate.year, todoDate.month, todoDate.day, 23, 59);
+//       final todoDate = todo.dueDate;
+//       final todoDateTime = todo.dueTime != null
+//           ? DateTime(
+//               todoDate.year,
+//               todoDate.month,
+//               todoDate.day,
+//               todo.dueTime!.hour,
+//               todo.dueTime!.minute,
+//             )
+//           : DateTime(todoDate.year, todoDate.month, todoDate.day, 23, 59);
 
-      // Check if the task is for the selected date
-      final isMatchingDate = todoDate.year == selectedDate.year &&
-          todoDate.month == selectedDate.month &&
-          todoDate.day == selectedDate.day;
+//       // Check if the task is for the selected date
+//       final isMatchingDate = todoDate.year == selectedDate.year &&
+//           todoDate.month == selectedDate.month &&
+//           todoDate.day == selectedDate.day;
 
-      // Check if the task is not overdue
-      final isNotOverdue = todoDateTime.isAfter(now);
+//       // Check if the task is not overdue
+//       final isNotOverdue = todoDateTime.isAfter(now);
 
-      return isMatchingDate && isNotOverdue;
-    }).toList();
-  }
+//       return isMatchingDate && isNotOverdue;
+//     }).toList();
+//   }
 
-// Update the _getOverdueTasks method to show only overdue and non-completed tasks
-  List<TodoItem> _getOverdueTasks() {
-    final now = DateTime.now();
-    return todos.where((todo) {
-      if (todo.isCompleted) return false; // Filter out completed tasks
+// // Update the _getOverdueTasks method to show only overdue and non-completed tasks
+//   List<TodoItem> _getOverdueTasks() {
+//     final now = DateTime.now();
+//     return todos.where((todo) {
+//       if (todo.isCompleted) return false; // Filter out completed tasks
 
-      final todoDate = todo.dueDate;
-      final todoDateTime = todo.dueTime != null
-          ? DateTime(
-              todoDate.year,
-              todoDate.month,
-              todoDate.day,
-              todo.dueTime!.hour,
-              todo.dueTime!.minute,
-            )
-          : DateTime(todoDate.year, todoDate.month, todoDate.day, 23, 59);
+//       final todoDate = todo.dueDate;
+//       final todoDateTime = todo.dueTime != null
+//           ? DateTime(
+//               todoDate.year,
+//               todoDate.month,
+//               todoDate.day,
+//               todo.dueTime!.hour,
+//               todo.dueTime!.minute,
+//             )
+//           : DateTime(todoDate.year, todoDate.month, todoDate.day, 23, 59);
 
-      return todoDateTime.isBefore(now); // Only return overdue tasks
-    }).toList();
-  }
+//       return todoDateTime.isBefore(now); // Only return overdue tasks
+//     }).toList();
+//   }
 
 // Update _hasTasksOnDate to exclude completed and overdue tasks
   bool _hasTasksOnDate(DateTime date) {
@@ -363,8 +363,37 @@ class _TodoListState extends State<TodoList> {
     }
   }
 
-// Update the _buildTaskList() method to fix the Dismissible widget issue
-  Widget _buildTaskLaist() {
+  List<TodoItem> _getTasksForSelectedDate() {
+    final selectedDateStart =
+        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+
+    return todos.where((todo) {
+      final todoDate =
+          DateTime(todo.dueDate.year, todo.dueDate.month, todo.dueDate.day);
+      return todoDate.isAtSameMomentAs(selectedDateStart);
+      // Removed the !todo.isCompleted condition to show all tasks
+    }).toList();
+  }
+
+// Add this method to get overdue tasks including completed ones
+  List<TodoItem> _getOverdueTasks() {
+    final now = DateTime.now();
+    return todos.where((todo) {
+      if (todo.dueDate == null) return false;
+
+      final taskDateTime = DateTime(
+        todo.dueDate.year,
+        todo.dueDate.month,
+        todo.dueDate.day,
+        todo.dueTime?.hour ?? 23,
+        todo.dueTime?.minute ?? 59,
+      );
+
+      return taskDateTime.isBefore(now) && !todo.isCompleted;
+    }).toList();
+  }
+
+  Widget _buildTaskList() {
     if (isLoading) {
       return Center(
         child: Column(
@@ -414,19 +443,33 @@ class _TodoListState extends State<TodoList> {
       );
     }
 
+    // Sort tasks: incomplete tasks first, then completed tasks
+    final sortedTasks = [...tasksForDate]..sort((a, b) {
+        if (a.isCompleted && !b.isCompleted) return 1;
+        if (!a.isCompleted && b.isCompleted) return -1;
+
+        // For tasks with same completion status, sort by time if available
+        if (a.dueTime != null && b.dueTime != null) {
+          return a.dueTime!.hour * 60 +
+              a.dueTime!.minute
+                  .compareTo(b.dueTime!.hour * 60 + b.dueTime!.minute);
+        }
+        return 0;
+      });
+
     return ListView.builder(
       shrinkWrap: true,
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: tasksForDate.length,
+      itemCount: sortedTasks.length,
       itemBuilder: (context, index) {
-        final todo = tasksForDate[index];
-        final isOverdue = _getOverdueTasks().contains(todo);
+        final todo = sortedTasks[index];
+        final isOverdue = _isTaskOverdue(todo);
 
         return Container(
-          key: UniqueKey(), // Add this line to ensure unique keys
+          key: UniqueKey(),
           margin: EdgeInsets.only(bottom: 12),
           child: Dismissible(
-            key: ValueKey(todo.id), // Keep using ValueKey for Dismissible
+            key: ValueKey(todo.id),
             direction: DismissDirection.endToStart,
             confirmDismiss: (direction) async {
               final result = await showDialog<bool>(
@@ -461,10 +504,7 @@ class _TodoListState extends State<TodoList> {
             },
             onDismissed: (direction) async {
               try {
-                // Remove from storage first
                 await _todoStorage.deleteTodo(todo.id);
-
-                // No need to manually update the local state as the stream will handle it
 
                 if (!mounted) return;
 
@@ -476,9 +516,7 @@ class _TodoListState extends State<TodoList> {
                       label: 'Undo',
                       onPressed: () async {
                         try {
-                          // Restore to storage
                           await _todoStorage.restoreTodo(todo);
-                          // Stream will handle updating the UI
                         } catch (e) {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -521,6 +559,21 @@ class _TodoListState extends State<TodoList> {
         );
       },
     );
+  }
+
+  bool _isTaskOverdue(TodoItem todo) {
+    if (todo.isCompleted) return false;
+
+    final now = DateTime.now();
+    final taskDate = DateTime(
+      todo.dueDate.year,
+      todo.dueDate.month,
+      todo.dueDate.day,
+      todo.dueTime?.hour ?? 23,
+      todo.dueTime?.minute ?? 59,
+    );
+
+    return taskDate.isBefore(now);
   }
 
 // Enhanced task item UI
@@ -651,191 +704,6 @@ class _TodoListState extends State<TodoList> {
         ),
       ),
     );
-  }
-
-  Widget _buildTaskList() {
-    if (isLoading) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(currentCategoryColor),
-              strokeWidth: 3,
-            ),
-            SizedBox(height: 16),
-            Text(
-              'Loading your tasks...',
-              style: GoogleFonts.poppins(
-                color: Colors.black87,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final tasksForDate =
-        showMyTasksOnly ? _getOverdueTasks() : _getTasksForSelectedDate();
-
-    if (tasksForDate.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.task_alt, size: 64, color: Colors.grey[300]),
-            SizedBox(height: 16),
-            Text(
-              showMyTasksOnly
-                  ? 'No overdue tasks'
-                  : 'No tasks for ${_getMonthName(selectedDate.month)} ${selectedDate.day}',
-              style: GoogleFonts.beVietnamPro(
-                color: Colors.black87,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.3,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Sort tasks: completed tasks at the bottom
-    final sortedTasks = [...tasksForDate]..sort((a, b) {
-        if (a.isCompleted && !b.isCompleted) return 1;
-        if (!a.isCompleted && b.isCompleted) return -1;
-        return 0;
-      });
-
-    return ListView.builder(
-      shrinkWrap: true,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: sortedTasks.length,
-      itemBuilder: (context, index) {
-        final todo = sortedTasks[index];
-        final isOverdue = _isTaskOverdue(todo);
-
-        // If task is overdue and we're not in the overdue tasks view,
-        // trigger a rebuild to remove it from the current view
-        if (isOverdue && !showMyTasksOnly) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            setState(() {}); // Trigger rebuild to update the view
-          });
-        }
-
-        return Container(
-          key: UniqueKey(),
-          margin: EdgeInsets.only(bottom: 12),
-          child: Dismissible(
-            key: ValueKey(todo.id),
-            direction: DismissDirection.endToStart,
-            confirmDismiss: (direction) async {
-              final result = await showDialog<bool>(
-                context: context,
-                builder: (BuildContext context) {
-                  return AlertDialog(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15)),
-                    title: Text('Delete Task',
-                        style:
-                            GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                    content: Text('Are you sure you want to delete this task?',
-                        style: GoogleFonts.inter()),
-                    actions: <Widget>[
-                      TextButton(
-                        child: Text('Cancel',
-                            style: GoogleFonts.inter(color: Colors.grey[600])),
-                        onPressed: () => Navigator.of(context).pop(false),
-                      ),
-                      TextButton(
-                        child: Text('Delete',
-                            style: GoogleFonts.inter(
-                                color: Colors.red,
-                                fontWeight: FontWeight.w600)),
-                        onPressed: () => Navigator.of(context).pop(true),
-                      ),
-                    ],
-                  );
-                },
-              );
-              return result ?? false;
-            },
-            onDismissed: (direction) async {
-              try {
-                await _todoStorage.deleteTodo(todo.id);
-
-                if (!mounted) return;
-
-                ScaffoldMessenger.of(context).clearSnackBars();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Task deleted', style: GoogleFonts.inter()),
-                    action: SnackBarAction(
-                      label: 'Undo',
-                      onPressed: () async {
-                        try {
-                          await _todoStorage.restoreTodo(todo);
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed to restore task',
-                                  style: GoogleFonts.inter()),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                );
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to delete task',
-                        style: GoogleFonts.inter()),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            background: Container(
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              alignment: Alignment.centerRight,
-              padding: EdgeInsets.only(right: 20),
-              child: CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.delete, color: Colors.red),
-              ),
-            ),
-            child: _buildTaskItem(todo, isOverdue),
-          ),
-        );
-      },
-    );
-  }
-
-// Helper method to check if a task is overdue
-  bool _isTaskOverdue(TodoItem todo) {
-    if (todo.isCompleted) return false;
-
-    final now = DateTime.now();
-    final taskDate = DateTime(
-      todo.dueDate.year,
-      todo.dueDate.month,
-      todo.dueDate.day,
-      todo.dueTime?.hour ?? 23,
-      todo.dueTime?.minute ?? 59,
-    );
-
-    return taskDate.isBefore(now);
   }
 
   @override
