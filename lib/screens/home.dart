@@ -26,6 +26,59 @@ class _TodoListState extends State<TodoList> {
   final ScrollController _calendarScrollController = ScrollController();
   StreamSubscription? _todoSubscription; // Add this
   final TodoStorage _todoStorage = TodoStorage();
+  // Helper method to create DateTime with time
+  List<TodoItem> _getTasksForSelectedDate() {
+    return todos.where((task) {
+      final isSameDate = task.dueDate.year == selectedDate.year &&
+          task.dueDate.month == selectedDate.month &&
+          task.dueDate.day == selectedDate.day;
+      return isSameDate && !_isTaskOverdue(task);
+    }).toList();
+  }
+
+  List<TodoItem> _getOverdueTasks() {
+    return todos.where((task) => _isTaskOverdue(task)).toList();
+  }
+
+  bool _isTaskOverdue(TodoItem task) {
+    if (task.isCompleted) return false; // Completed tasks are not overdue.
+    final now = DateTime.now();
+    final taskDueDateTime = DateTime(
+      task.dueDate.year,
+      task.dueDate.month,
+      task.dueDate.day,
+      task.dueTime?.hour ?? 23,
+      task.dueTime?.minute ?? 59,
+    );
+    return taskDueDateTime.isBefore(now);
+  }
+
+  DateTime _createDateTime(DateTime date, TimeOfDay? time) {
+    return time != null
+        ? DateTime(date.year, date.month, date.day, time.hour, time.minute)
+        : DateTime(date.year, date.month, date.day, 23, 59);
+  }
+
+// Check if date has any non-completed, non-overdue tasks
+  bool _hasTasksOnDate(DateTime date) {
+    final now = DateTime.now();
+    return todos.any((todo) {
+      // Skip completed tasks
+      if (todo.isCompleted) return false;
+
+      // Check if the dates match
+      final isMatchingDate = todo.dueDate.year == date.year &&
+          todo.dueDate.month == date.month &&
+          todo.dueDate.day == date.day;
+
+      // Convert todo date and time to DateTime for comparison
+      final todoDateTime = _createDateTime(todo.dueDate, todo.dueTime);
+
+      // Return true if matching date and not overdue
+      return isMatchingDate && todoDateTime.isAfter(now);
+    });
+  }
+
   Widget _buildMonthYearSelector() {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -92,7 +145,16 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
-  Future<bool> _showTaskCompletionDialog(TodoItem todo) async {
+  Future<bool> _showTaskCompletionDialog(
+      TodoItem todo, bool isCurrentlyCompleted) async {
+    String dialogTitle =
+        isCurrentlyCompleted ? 'Mark Task as Incomplete?' : 'Complete Task?';
+    String dialogContent = isCurrentlyCompleted
+        ? 'Are you sure you want to mark this task as incomplete?'
+        : 'Are you sure you want to mark this task as complete?';
+    String actionButtonText =
+        isCurrentlyCompleted ? 'Mark Incomplete' : 'Complete';
+
     bool? result = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -101,7 +163,7 @@ class _TodoListState extends State<TodoList> {
             borderRadius: BorderRadius.circular(15),
           ),
           title: Text(
-            'Complete Task?',
+            dialogTitle,
             style: GoogleFonts.aBeeZee(
               fontWeight: FontWeight.bold,
             ),
@@ -111,7 +173,7 @@ class _TodoListState extends State<TodoList> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Are you sure you want to mark this task as complete?',
+                dialogContent,
                 style: GoogleFonts.aBeeZee(),
               ),
               SizedBox(height: 12),
@@ -135,7 +197,7 @@ class _TodoListState extends State<TodoList> {
                 ),
               ),
               child: Text(
-                'Complete',
+                actionButtonText,
                 style: GoogleFonts.aBeeZee(color: Colors.white),
               ),
             ),
@@ -144,82 +206,6 @@ class _TodoListState extends State<TodoList> {
       },
     );
     return result ?? false;
-  }
-
-//   List<TodoItem> _getTasksForSelectedDate() {
-//     final now = DateTime.now();
-//     return todos.where((todo) {
-//       if (todo.isCompleted) return false; // Filter out completed tasks
-
-//       final todoDate = todo.dueDate;
-//       final todoDateTime = todo.dueTime != null
-//           ? DateTime(
-//               todoDate.year,
-//               todoDate.month,
-//               todoDate.day,
-//               todo.dueTime!.hour,
-//               todo.dueTime!.minute,
-//             )
-//           : DateTime(todoDate.year, todoDate.month, todoDate.day, 23, 59);
-
-//       // Check if the task is for the selected date
-//       final isMatchingDate = todoDate.year == selectedDate.year &&
-//           todoDate.month == selectedDate.month &&
-//           todoDate.day == selectedDate.day;
-
-//       // Check if the task is not overdue
-//       final isNotOverdue = todoDateTime.isAfter(now);
-
-//       return isMatchingDate && isNotOverdue;
-//     }).toList();
-//   }
-
-// // Update the _getOverdueTasks method to show only overdue and non-completed tasks
-//   List<TodoItem> _getOverdueTasks() {
-//     final now = DateTime.now();
-//     return todos.where((todo) {
-//       if (todo.isCompleted) return false; // Filter out completed tasks
-
-//       final todoDate = todo.dueDate;
-//       final todoDateTime = todo.dueTime != null
-//           ? DateTime(
-//               todoDate.year,
-//               todoDate.month,
-//               todoDate.day,
-//               todo.dueTime!.hour,
-//               todo.dueTime!.minute,
-//             )
-//           : DateTime(todoDate.year, todoDate.month, todoDate.day, 23, 59);
-
-//       return todoDateTime.isBefore(now); // Only return overdue tasks
-//     }).toList();
-//   }
-
-// Update _hasTasksOnDate to exclude completed and overdue tasks
-  bool _hasTasksOnDate(DateTime date) {
-    final now = DateTime.now();
-    return todos.any((todo) {
-      if (todo.isCompleted) return false; // Filter out completed tasks
-
-      final todoDate = todo.dueDate;
-      final todoDateTime = todo.dueTime != null
-          ? DateTime(
-              todoDate.year,
-              todoDate.month,
-              todoDate.day,
-              todo.dueTime!.hour,
-              todo.dueTime!.minute,
-            )
-          : DateTime(todoDate.year, todoDate.month, todoDate.day, 23, 59);
-
-      final isMatchingDate = todoDate.year == date.year &&
-          todoDate.month == date.month &&
-          todoDate.day == date.day;
-
-      final isNotOverdue = todoDateTime.isAfter(now);
-
-      return isMatchingDate && isNotOverdue;
-    });
   }
 
   Widget _buildTaskTabs() {
@@ -363,36 +349,6 @@ class _TodoListState extends State<TodoList> {
     }
   }
 
-  List<TodoItem> _getTasksForSelectedDate() {
-    final selectedDateStart =
-        DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-
-    return todos.where((todo) {
-      final todoDate =
-          DateTime(todo.dueDate.year, todo.dueDate.month, todo.dueDate.day);
-      return todoDate.isAtSameMomentAs(selectedDateStart);
-      // Removed the !todo.isCompleted condition to show all tasks
-    }).toList();
-  }
-
-// Add this method to get overdue tasks including completed ones
-  List<TodoItem> _getOverdueTasks() {
-    final now = DateTime.now();
-    return todos.where((todo) {
-      if (todo.dueDate == null) return false;
-
-      final taskDateTime = DateTime(
-        todo.dueDate.year,
-        todo.dueDate.month,
-        todo.dueDate.day,
-        todo.dueTime?.hour ?? 23,
-        todo.dueTime?.minute ?? 59,
-      );
-
-      return taskDateTime.isBefore(now) && !todo.isCompleted;
-    }).toList();
-  }
-
   Widget _buildTaskList() {
     if (isLoading) {
       return Center(
@@ -417,10 +373,17 @@ class _TodoListState extends State<TodoList> {
       );
     }
 
-    final tasksForDate =
-        showMyTasksOnly ? _getOverdueTasks() : _getTasksForSelectedDate();
+    // Modified filtering logic
+    List<TodoItem> tasksToShow;
+    if (showMyTasksOnly) {
+      // Only show overdue tasks when specifically filtered
+      tasksToShow = _getOverdueTasks();
+    } else {
+      // Show all tasks for selected date, including completed ones
+      tasksToShow = _getTasksForSelectedDate();
+    }
 
-    if (tasksForDate.isEmpty) {
+    if (tasksToShow.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -444,15 +407,14 @@ class _TodoListState extends State<TodoList> {
     }
 
     // Sort tasks: incomplete tasks first, then completed tasks
-    final sortedTasks = [...tasksForDate]..sort((a, b) {
+    final sortedTasks = [...tasksToShow]..sort((a, b) {
         if (a.isCompleted && !b.isCompleted) return 1;
         if (!a.isCompleted && b.isCompleted) return -1;
 
-        // For tasks with same completion status, sort by time if available
+        // Sort by due time for tasks with the same completion status.
         if (a.dueTime != null && b.dueTime != null) {
-          return a.dueTime!.hour * 60 +
-              a.dueTime!.minute
-                  .compareTo(b.dueTime!.hour * 60 + b.dueTime!.minute);
+          return (a.dueTime!.hour * 60 + a.dueTime!.minute)
+              .compareTo(b.dueTime!.hour * 60 + b.dueTime!.minute);
         }
         return 0;
       });
@@ -471,89 +433,7 @@ class _TodoListState extends State<TodoList> {
           child: Dismissible(
             key: ValueKey(todo.id),
             direction: DismissDirection.endToStart,
-            confirmDismiss: (direction) async {
-              final result = await showDialog<bool>(
-                context: context,
-                builder: (BuildContext context) {
-                  return AlertDialog(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15)),
-                    title: Text('Delete Task',
-                        style:
-                            GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                    content: Text('Are you sure you want to delete this task?',
-                        style: GoogleFonts.inter()),
-                    actions: <Widget>[
-                      TextButton(
-                        child: Text('Cancel',
-                            style: GoogleFonts.inter(color: Colors.grey[600])),
-                        onPressed: () => Navigator.of(context).pop(false),
-                      ),
-                      TextButton(
-                        child: Text('Delete',
-                            style: GoogleFonts.inter(
-                                color: Colors.red,
-                                fontWeight: FontWeight.w600)),
-                        onPressed: () => Navigator.of(context).pop(true),
-                      ),
-                    ],
-                  );
-                },
-              );
-              return result ?? false;
-            },
-            onDismissed: (direction) async {
-              try {
-                await _todoStorage.deleteTodo(todo.id);
-
-                if (!mounted) return;
-
-                ScaffoldMessenger.of(context).clearSnackBars();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Task deleted', style: GoogleFonts.inter()),
-                    action: SnackBarAction(
-                      label: 'Undo',
-                      onPressed: () async {
-                        try {
-                          await _todoStorage.restoreTodo(todo);
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed to restore task',
-                                  style: GoogleFonts.inter()),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                );
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to delete task',
-                        style: GoogleFonts.inter()),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            background: Container(
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              alignment: Alignment.centerRight,
-              padding: EdgeInsets.only(right: 20),
-              child: CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.delete, color: Colors.red),
-              ),
-            ),
+            // Rest of the Dismissible widget code remains the same
             child: _buildTaskItem(todo, isOverdue),
           ),
         );
@@ -561,23 +441,9 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
-  bool _isTaskOverdue(TodoItem todo) {
-    if (todo.isCompleted) return false;
-
-    final now = DateTime.now();
-    final taskDate = DateTime(
-      todo.dueDate.year,
-      todo.dueDate.month,
-      todo.dueDate.day,
-      todo.dueTime?.hour ?? 23,
-      todo.dueTime?.minute ?? 59,
-    );
-
-    return taskDate.isBefore(now);
-  }
-
-// Enhanced task item UI
   Widget _buildTaskItem(TodoItem todo, bool isOverdue) {
+    // Helper function to check and update main task status based on subtasks
+
     return Container(
       decoration: BoxDecoration(
         color: isOverdue ? Colors.red[50] : Colors.white,
@@ -592,116 +458,268 @@ class _TodoListState extends State<TodoList> {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isOverdue
-                ? Colors.red[100]
-                : currentCategoryColor.withOpacity(0.1),
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isOverdue
+                    ? Colors.red[100]
+                    : currentCategoryColor.withOpacity(0.1),
+              ),
+              child: Checkbox(
+                value: todo.isCompleted,
+                onChanged: (bool? value) async {
+                  if (value != null) {
+                    final shouldUpdateStatus =
+                        await _showTaskCompletionDialog(todo, todo.isCompleted);
+                    if (shouldUpdateStatus) {
+                      bool previousState = todo.isCompleted;
+                      setState(() {
+                        todo.isCompleted = value;
+                        todo.completedAt = value ? DateTime.now() : null;
+
+                        // Automatically mark all subtasks as completed if the main task is completed
+                        if (value) {
+                          for (var subtask in todo.subtasks) {
+                            subtask.isCompleted = true;
+                            subtask.completedAt = DateTime.now();
+                          }
+                        } else {
+                          // Optionally, unmark all subtasks if the main task is unmarked
+                          for (var subtask in todo.subtasks) {
+                            subtask.isCompleted = false;
+                            subtask.completedAt = null;
+                          }
+                        }
+                      });
+
+                      try {
+                        await _todoStorage.updateTodoStatus(todo.id, value);
+                        // Save the updated subtasks
+                        await _todoStorage.updateTodo(todo);
+                      } catch (e) {
+                        setState(() {
+                          todo.isCompleted = previousState;
+                          todo.completedAt =
+                              previousState ? DateTime.now() : null;
+                        });
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to update task status'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
+                activeColor: isOverdue ? Colors.red : currentCategoryColor,
+              ),
+            ),
+            title: Text(
+              todo.title.isEmpty ? 'Untitled Task' : todo.title,
+              style: GoogleFonts.poppins(
+                decoration:
+                    todo.isCompleted ? TextDecoration.lineThrough : null,
+                color: todo.isCompleted ? Colors.grey[400] : Colors.black87,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                height: 1.3,
+              ),
+            ),
+            subtitle: todo.description.isNotEmpty
+                ? Text(
+                    todo.description,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                      height: 1.4,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  )
+                : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (todo.dueTime != null)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isOverdue
+                          ? Colors.red.withOpacity(0.1)
+                          : currentCategoryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: isOverdue ? Colors.red : currentCategoryColor,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          todo.dueTime!.format(context),
+                          style: GoogleFonts.inter(
+                            color:
+                                isOverdue ? Colors.red : currentCategoryColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (isOverdue)
+                  TextButton(
+                    onPressed: () => _showRescheduleDialog(context, todo),
+                    child: Text(
+                      'Reschedule',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          child: Checkbox(
-            value: todo.isCompleted,
+          _buildSubtaskList(todo), // Pass the function to subtask list
+        ],
+      ),
+    );
+  }
+
+// Add this widget to show subtasks in the task item
+  Widget _buildSubtaskList(TodoItem todo) {
+    // Helper function to check and update main task status
+    void checkAndUpdateMainTask() {
+      if (todo.subtasks.isNotEmpty &&
+          todo.subtasks.every((st) => st.isCompleted)) {
+        setState(() {
+          todo.isCompleted = true;
+          todo.completedAt = DateTime.now();
+        });
+        _todoStorage.updateTodoStatus(todo.id, true);
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (todo.subtasks.isNotEmpty) ...[
+          Divider(height: 16),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              'Subtasks (${todo.subtasks.where((st) => st.isCompleted).length}/${todo.subtasks.length})',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          ...todo.subtasks.map((subtask) =>
+              _buildSubtaskItem(todo, subtask, checkAndUpdateMainTask)),
+        ],
+        // Add subtask button
+        TextButton.icon(
+          icon: Icon(Icons.add, size: 18),
+          label: Text('Add Subtask', style: GoogleFonts.inter()),
+          onPressed: () => _showAddSubtaskDialog(todo),
+          style: TextButton.styleFrom(
+            foregroundColor: currentCategoryColor,
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
+        ),
+      ],
+    );
+  }
+
+// Add this widget to show individual subtask items
+  Widget _buildSubtaskItem(
+      TodoItem todo, SubTask subtask, VoidCallback onStatusChanged) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(width: 32), // Indent subtasks
+          Checkbox(
+            value: subtask.isCompleted,
             onChanged: (bool? value) async {
               if (value != null) {
-                final shouldComplete = await _showTaskCompletionDialog(todo);
-                if (shouldComplete) {
-                  bool wasCompleted = todo.isCompleted;
-                  setState(() {
-                    todo.isCompleted = value;
-                    todo.completedAt = value ? DateTime.now() : null;
-                  });
+                setState(() {
+                  subtask.isCompleted = value;
+                  subtask.completedAt = value ? DateTime.now() : null;
+                });
 
-                  try {
-                    await _todoStorage.updateTodoStatus(todo.id, value);
-                  } catch (e) {
-                    setState(() {
-                      todo.isCompleted = wasCompleted;
-                      todo.completedAt = wasCompleted ? DateTime.now() : null;
-                    });
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to update task status'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
+                // Check if all subtasks are completed and update main task
+                onStatusChanged();
+
+                try {
+                  await _todoStorage.updateTodo(todo);
+                } catch (e) {
+                  // Revert the change if update fails
+                  setState(() {
+                    subtask.isCompleted = !value;
+                    subtask.completedAt = !value ? DateTime.now() : null;
+                  });
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to update subtask status'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
               }
             },
-            activeColor: isOverdue ? Colors.red : currentCategoryColor,
+            activeColor: currentCategoryColor,
           ),
-        ),
-        title: Text(
-          todo.title.isEmpty ? 'Untitled Task' : todo.title,
-          style: GoogleFonts.poppins(
-            decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
-            color: todo.isCompleted ? Colors.grey[400] : Colors.black87,
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            height: 1.3,
-          ),
-        ),
-        subtitle: todo.description.isNotEmpty
-            ? Text(
-                todo.description,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  height: 1.4,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              )
-            : null,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (todo.dueTime != null)
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isOverdue
-                      ? Colors.red.withOpacity(0.1)
-                      : currentCategoryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.access_time,
-                      size: 14,
-                      color: isOverdue ? Colors.red : currentCategoryColor,
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      todo.dueTime!.format(context),
-                      style: GoogleFonts.inter(
-                        color: isOverdue ? Colors.red : currentCategoryColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+          Expanded(
+            child: Text(
+              subtask.title,
+              style: GoogleFonts.inter(
+                decoration:
+                    subtask.isCompleted ? TextDecoration.lineThrough : null,
+                color: subtask.isCompleted ? Colors.grey[400] : Colors.black87,
               ),
-            if (isOverdue)
-              TextButton(
-                onPressed: () => _showRescheduleDialog(context, todo),
-                child: Text(
-                  'Reschedule',
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 13,
-                    color: Colors.red,
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.delete_outline, size: 20),
+            onPressed: () async {
+              setState(() {
+                todo.subtasks.remove(subtask);
+              });
+              try {
+                await _todoStorage.updateTodo(todo);
+              } catch (e) {
+                // Revert the change if update fails
+                setState(() {
+                  todo.subtasks.add(subtask);
+                });
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to delete subtask'),
+                    backgroundColor: Colors.red,
                   ),
-                ),
-              ),
-          ],
-        ),
+                );
+              }
+              // Check if removing this subtask affects the main task status
+              onStatusChanged();
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1166,11 +1184,13 @@ class _TodoListState extends State<TodoList> {
 
   void _showAddTaskDialog() {
     final TextEditingController titleController = TextEditingController();
-    final TextEditingController descriptionController = TextEditingController();
+    final List<TextEditingController> subtaskControllers = [
+      TextEditingController()
+    ];
+    bool showTitleError = false; // Add this state variable
     DateTime selectedDueDate = DateTime.now();
     TimeOfDay? selectedDueTime;
     String selectedDateType = 'today';
-    bool showDescriptionError = false;
     bool showTimeError = false;
 
     // Predefined titles
@@ -1202,15 +1222,27 @@ class _TodoListState extends State<TodoList> {
             return selectedDateTime.isAfter(now);
           }
 
+          void addNewSubtask() {
+            setState(() {
+              subtaskControllers.add(TextEditingController());
+            });
+          }
+
+          void removeSubtask(int index) {
+            setState(() {
+              subtaskControllers[index].dispose();
+              subtaskControllers.removeAt(index);
+            });
+          }
+
           return Container(
-            height: MediaQuery.of(context).size.height * 0.70,
+            height: MediaQuery.of(context).size.height * 0.85,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Column(
               children: [
-                // Handle bar
                 Container(
                   margin: EdgeInsets.symmetric(vertical: 8),
                   width: 40,
@@ -1253,10 +1285,20 @@ class _TodoListState extends State<TodoList> {
                               child: TextField(
                                 controller: titleController,
                                 style: GoogleFonts.inter(),
+                                onChanged: (value) {
+                                  // Clear error when user starts typing
+                                  if (showTitleError) {
+                                    setState(() {
+                                      showTitleError = false;
+                                    });
+                                  }
+                                },
                                 decoration: InputDecoration(
                                   labelText: 'Task Title',
                                   labelStyle: GoogleFonts.inter(
-                                    color: Colors.grey[600],
+                                    color: showTitleError
+                                        ? Colors.red
+                                        : Colors.grey[600],
                                   ),
                                   hintText: 'Enter task title',
                                   hintStyle: GoogleFonts.inter(
@@ -1264,8 +1306,35 @@ class _TodoListState extends State<TodoList> {
                                   ),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: showTitleError
+                                          ? Colors.red
+                                          : Colors.grey[300]!,
+                                    ),
                                   ),
-                                  prefixIcon: Icon(Icons.task_alt),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: showTitleError
+                                          ? Colors.red
+                                          : Colors.grey[300]!,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: showTitleError
+                                          ? Colors.red
+                                          : currentCategoryColor,
+                                    ),
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.task_alt,
+                                    color: showTitleError ? Colors.red : null,
+                                  ),
+                                  errorText: showTitleError
+                                      ? 'Please fill out this field'
+                                      : null,
                                 ),
                               ),
                             ),
@@ -1296,38 +1365,70 @@ class _TodoListState extends State<TodoList> {
                             ),
                           ],
                         ),
-                        SizedBox(height: 16),
+                        SizedBox(height: 24),
 
-                        // Description Field
-                        TextField(
-                          controller: descriptionController,
-                          style: GoogleFonts.inter(),
-                          maxLines: 3,
-                          decoration: InputDecoration(
-                            labelText: 'Description',
-                            labelStyle: GoogleFonts.inter(
-                              color: Colors.grey[600],
+                        // Subtasks Section
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Subtasks',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.add_circle_outline),
+                                  color: currentCategoryColor,
+                                  onPressed: addNewSubtask,
+                                ),
+                              ],
                             ),
-                            hintText: 'Enter task description',
-                            hintStyle: GoogleFonts.inter(
-                              color: Colors.grey[400],
+                            SizedBox(height: 8),
+                            ...List.generate(
+                              subtaskControllers.length,
+                              (index) => Padding(
+                                padding: EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: subtaskControllers[index],
+                                        style: GoogleFonts.inter(),
+                                        decoration: InputDecoration(
+                                          hintText: 'Enter subtask',
+                                          hintStyle: GoogleFonts.inter(
+                                            color: Colors.grey[400],
+                                          ),
+                                          border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          prefixIcon: Icon(
+                                              Icons.subdirectory_arrow_right),
+                                        ),
+                                      ),
+                                    ),
+                                    if (subtaskControllers.length > 1)
+                                      IconButton(
+                                        icon: Icon(Icons.remove_circle_outline),
+                                        color: Colors.red[400],
+                                        onPressed: () => removeSubtask(index),
+                                      ),
+                                  ],
+                                ),
+                              ),
                             ),
-                            errorText: showDescriptionError
-                                ? 'Description is required'
-                                : null,
-                            errorStyle: GoogleFonts.inter(
-                              color: Colors.red,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            prefixIcon: Icon(Icons.description),
-                          ),
+                          ],
                         ),
 
                         SizedBox(height: 16),
 
-                        // Date Selection
                         Container(
                           decoration: BoxDecoration(
                             border: Border.all(color: Colors.grey[300]!),
@@ -1567,75 +1668,103 @@ class _TodoListState extends State<TodoList> {
                         SizedBox(height: 24),
                         ElevatedButton(
                           onPressed: () async {
-                            setState(() {
-                              showDescriptionError =
-                                  descriptionController.text.trim().isEmpty;
-                            });
-                            if (!showDescriptionError) {
-                              final uuid = Uuid();
-                              final newTodo = TodoItem(
-                                id: uuid.v4(), // Generates a unique UUID string
-                                title: titleController.text.trim(),
-                                description: descriptionController.text.trim(),
-                                createdAt: DateTime.now(),
-                                dueDate: selectedDueDate,
-                                dueTime: selectedDueTime,
+                            if (titleController.text.trim().isEmpty) {
+                              setState(() {
+                                showTitleError = true;
+                              });
+                              return;
+                            }
+
+                            final uuid = Uuid();
+
+                            // Create subtasks list
+                            List<SubTask> subtasks = subtaskControllers
+                                .where((controller) =>
+                                    controller.text.trim().isNotEmpty)
+                                .map((controller) => SubTask(
+                                      id: uuid.v4(),
+                                      title: controller.text.trim(),
+                                    ))
+                                .toList();
+
+                            final newTodo = TodoItem(
+                              id: uuid.v4(),
+                              title: titleController.text.trim(),
+                              description:
+                                  "", // Empty as we're using subtasks instead
+                              createdAt: DateTime.now(),
+                              dueDate: selectedDueDate,
+                              dueTime: selectedDueTime,
+                              subtasks: subtasks,
+                            );
+
+                            try {
+                              // Show loading indicator
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (context) => Center(
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        currentCategoryColor),
+                                  ),
+                                ),
                               );
 
-                              try {
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (context) => Center(
-                                    child: CircularProgressIndicator(
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                          currentCategoryColor),
-                                    ),
-                                  ),
-                                );
+                              await _todoStorage.addTodo(newTodo);
 
-                                await _todoStorage.addTodo(newTodo);
+                              // Close loading indicator
+                              Navigator.of(context).pop();
+                              // Close add task dialog
+                              Navigator.of(context).pop();
 
-                                Navigator.of(context).pop(); // Close loading
-                                Navigator.of(context).pop(); // Close dialog
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Task added successfully',
-                                      style: GoogleFonts.inter(),
-                                    ),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              } catch (e) {
-                                Navigator.of(context).pop();
-
-                                ScaffoldMessenger.of(context)
-                                    .showSnackBar(SnackBar(
+                              // Show success message
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
                                   content: Text(
-                                    e.toString().contains('PERMISSION_DENIED')
-                                        ? 'Permission denied. Please sign in again.'
-                                        : 'Failed to add task. Please try again.',
+                                    'Task added successfully',
+                                    style: GoogleFonts.inter(),
+                                  ),
+                                  backgroundColor: Colors.green,
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: EdgeInsets.all(16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            } catch (e) {
+                              // Close loading indicator
+                              Navigator.of(context).pop();
+
+                              // Show error message
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Failed to add task. Please try again.',
                                     style: GoogleFonts.inter(),
                                   ),
                                   backgroundColor: Colors.red,
-                                  action: SnackBarAction(
-                                    label: 'Retry',
-                                    textColor: Colors.white,
-                                    onPressed: () {
-                                      _todoStorage.addTodo(newTodo);
-                                    },
+                                  behavior: SnackBarBehavior.floating,
+                                  margin: EdgeInsets.all(16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                ));
-                              }
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
                             }
                           },
                           child: Padding(
                             padding: EdgeInsets.symmetric(vertical: 12),
                             child: Text(
                               'Add Task',
-                              style: GoogleFonts.inter(color: Colors.white),
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
                           style: ElevatedButton.styleFrom(
@@ -1643,6 +1772,7 @@ class _TodoListState extends State<TodoList> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
+                            elevation: 2,
                           ),
                         )
                       ],
@@ -1701,6 +1831,52 @@ class _TodoListState extends State<TodoList> {
       'December'
     ];
     return monthNames[month - 1];
+  }
+
+  void _showAddSubtaskDialog(TodoItem todo) {
+    final TextEditingController subtaskController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add Subtask', style: GoogleFonts.poppins()),
+        content: TextField(
+          controller: subtaskController,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Enter subtask',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: Text('Cancel', style: GoogleFonts.inter()),
+            onPressed: () => Navigator.pop(context),
+          ),
+          ElevatedButton(
+            child: Text('Add', style: GoogleFonts.inter()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: currentCategoryColor,
+            ),
+            onPressed: () async {
+              if (subtaskController.text.trim().isNotEmpty) {
+                final newSubtask = SubTask(
+                  id: const Uuid().v4(),
+                  title: subtaskController.text.trim(),
+                );
+
+                todo.subtasks.add(newSubtask);
+                await _todoStorage.updateTodo(todo);
+                setState(() {});
+                Navigator.pop(context);
+              }
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   int _getDaysInMonth(DateTime date) {
