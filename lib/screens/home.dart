@@ -208,6 +208,335 @@ class _TodoListState extends State<TodoList> {
     return result ?? false;
   }
 
+  Widget _buildTaskItem(TodoItem todo, bool isOverdue) {
+    bool areSubtasksExpanded = false;
+
+    // Helper function to check if all subtasks are complete
+    bool areAllSubtasksComplete() {
+      return todo.subtasks.every((subtask) => subtask.isCompleted);
+    }
+
+    // Helper function to update main task status based on subtasks
+    void updateMainTaskStatus(StateSetter setState) {
+      final allComplete = areAllSubtasksComplete();
+      if (todo.isCompleted != allComplete) {
+        setState(() {
+          todo.isCompleted = allComplete;
+          todo.completedAt = allComplete ? DateTime.now() : null;
+        });
+      }
+    }
+
+    Future<void> handleMainTaskStatusChange(
+        bool? newValue, StateSetter setState) async {
+      if (newValue == null) return;
+
+      final shouldUpdate =
+          await _showTaskCompletionDialog(todo, todo.isCompleted);
+      if (!shouldUpdate) return;
+
+      setState(() {
+        todo.isCompleted = newValue;
+        todo.completedAt = newValue ? DateTime.now() : null;
+
+        // Update all subtasks' completion status based on the main task
+        for (var subtask in todo.subtasks) {
+          subtask.isCompleted = newValue;
+          subtask.completedAt = newValue ? DateTime.now() : null;
+        }
+      });
+
+      try {
+        await _todoStorage.updateTodo(todo);
+
+        // Show success snackbar
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newValue
+                ? 'Main task and subtasks marked as complete'
+                : 'Main task and subtasks marked as incomplete'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        setState(() {
+          todo.isCompleted = !newValue;
+          todo.completedAt = !newValue ? DateTime.now() : null;
+
+          // Revert subtasks' completion status
+          for (var subtask in todo.subtasks) {
+            subtask.isCompleted = !newValue;
+            subtask.completedAt = !newValue ? DateTime.now() : null;
+          }
+        });
+
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update task and subtasks'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+
+    Widget _buildSubtaskList() {
+      return Column(
+        children: todo.subtasks.map((subtask) {
+          return ListTile(
+            leading: Checkbox(
+              value: subtask.isCompleted,
+              onChanged: (bool? newValue) async {
+                if (newValue == null) return;
+
+                setState(() {
+                  subtask.isCompleted = newValue;
+                  subtask.completedAt = newValue ? DateTime.now() : null;
+                });
+
+                updateMainTaskStatus(setState);
+
+                try {
+                  await _todoStorage.updateTodo(todo);
+                } catch (e) {
+                  setState(() {
+                    subtask.isCompleted = !newValue;
+                    subtask.completedAt = !newValue ? DateTime.now() : null;
+                    updateMainTaskStatus(setState);
+                  });
+
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to update task status'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              activeColor: currentCategoryColor,
+            ),
+            title: Text(
+              subtask.title,
+              style: GoogleFonts.poppins(
+                decoration:
+                    subtask.isCompleted ? TextDecoration.lineThrough : null,
+                color: subtask.isCompleted ? Colors.grey[400] : Colors.black87,
+                fontSize: 14,
+              ),
+            ),
+          );
+        }).toList(),
+      );
+    }
+
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Dismissible(
+          key: ValueKey(todo.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: EdgeInsets.only(right: 20),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(Icons.delete, color: Colors.white),
+          ),
+          confirmDismiss: (direction) async {
+            return await showDialog<bool>(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      title: Text(
+                        'Delete Task?',
+                        style: GoogleFonts.aBeeZee(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Are you sure you want to delete this task?',
+                            style: GoogleFonts.aBeeZee(),
+                          ),
+                          SizedBox(height: 12),
+                          Text(todo.title, style: GoogleFonts.aBeeZee()),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.aBeeZee(color: Colors.grey[600]),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: Text(
+                            'Delete',
+                            style: GoogleFonts.aBeeZee(color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ) ??
+                false;
+          },
+          onDismissed: (direction) async {
+            // Store the task for undo functionality
+            final deletedTodo = todo;
+
+            try {
+              await _todoStorage.deleteTodo(todo.id);
+
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Task deleted'),
+                  action: SnackBarAction(
+                    label: 'Undo',
+                    onPressed: () async {
+                      try {
+                        await _todoStorage.addTodo(deletedTodo);
+                        setState(() {
+                          // Refresh the tasks list
+                          _loadTodos(); // Make sure you have this method to reload tasks
+                        });
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to restore task'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              );
+            } catch (e) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to delete task'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: isOverdue ? Colors.red[50] : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: isOverdue
+                      ? Colors.red.withOpacity(0.08)
+                      : currentCategoryColor.withOpacity(0.08),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isOverdue
+                          ? Colors.red[100]
+                          : currentCategoryColor.withOpacity(0.1),
+                    ),
+                    child: Checkbox(
+                      value: todo.isCompleted,
+                      onChanged: (bool? newValue) =>
+                          handleMainTaskStatusChange(newValue, setState),
+                      activeColor:
+                          isOverdue ? Colors.red : currentCategoryColor,
+                    ),
+                  ),
+                  title: Text(
+                    todo.title.isEmpty ? 'Untitled Task' : todo.title,
+                    style: GoogleFonts.poppins(
+                      decoration:
+                          todo.isCompleted ? TextDecoration.lineThrough : null,
+                      color:
+                          todo.isCompleted ? Colors.grey[400] : Colors.black87,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      height: 1.3,
+                    ),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (todo.description.isNotEmpty)
+                        Text(
+                          todo.description,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                            height: 1.4,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      if (todo.subtasks.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              areSubtasksExpanded = !areSubtasksExpanded;
+                            });
+                          },
+                          icon: Icon(
+                            areSubtasksExpanded
+                                ? Icons.keyboard_arrow_up
+                                : Icons.keyboard_arrow_down,
+                            size: 20,
+                            color: currentCategoryColor,
+                          ),
+                          label: Text(
+                            '${todo.subtasks.length} subtasks',
+                            style: GoogleFonts.inter(
+                              color: currentCategoryColor,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  trailing: _buildTaskTrailing(todo, isOverdue, context),
+                ),
+                if (areSubtasksExpanded) _buildSubtaskList(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildTaskTabs() {
     final upcomingTasks = _getTasksForSelectedDate();
     final overdueTasks = _getOverdueTasks();
@@ -441,159 +770,53 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
-  Widget _buildTaskItem(TodoItem todo, bool isOverdue) {
-    // Helper function to check and update main task status based on subtasks
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isOverdue ? Colors.red[50] : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: isOverdue
-                ? Colors.red.withOpacity(0.08)
-                : currentCategoryColor.withOpacity(0.08),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isOverdue
-                    ? Colors.red[100]
-                    : currentCategoryColor.withOpacity(0.1),
-              ),
-              child: Checkbox(
-                value: todo.isCompleted,
-                onChanged: (bool? value) async {
-                  if (value != null) {
-                    final shouldUpdateStatus =
-                        await _showTaskCompletionDialog(todo, todo.isCompleted);
-                    if (shouldUpdateStatus) {
-                      bool previousState = todo.isCompleted;
-                      setState(() {
-                        todo.isCompleted = value;
-                        todo.completedAt = value ? DateTime.now() : null;
-
-                        // Automatically mark all subtasks as completed if the main task is completed
-                        if (value) {
-                          for (var subtask in todo.subtasks) {
-                            subtask.isCompleted = true;
-                            subtask.completedAt = DateTime.now();
-                          }
-                        } else {
-                          // Optionally, unmark all subtasks if the main task is unmarked
-                          for (var subtask in todo.subtasks) {
-                            subtask.isCompleted = false;
-                            subtask.completedAt = null;
-                          }
-                        }
-                      });
-
-                      try {
-                        await _todoStorage.updateTodoStatus(todo.id, value);
-                        // Save the updated subtasks
-                        await _todoStorage.updateTodo(todo);
-                      } catch (e) {
-                        setState(() {
-                          todo.isCompleted = previousState;
-                          todo.completedAt =
-                              previousState ? DateTime.now() : null;
-                        });
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Failed to update task status'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    }
-                  }
-                },
-                activeColor: isOverdue ? Colors.red : currentCategoryColor,
-              ),
+  Widget _buildTaskTrailing(
+      TodoItem todo, bool isOverdue, BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (todo.dueTime != null)
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isOverdue
+                  ? Colors.red.withOpacity(0.1)
+                  : currentCategoryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
             ),
-            title: Text(
-              todo.title.isEmpty ? 'Untitled Task' : todo.title,
-              style: GoogleFonts.poppins(
-                decoration:
-                    todo.isCompleted ? TextDecoration.lineThrough : null,
-                color: todo.isCompleted ? Colors.grey[400] : Colors.black87,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                height: 1.3,
-              ),
-            ),
-            subtitle: todo.description.isNotEmpty
-                ? Text(
-                    todo.description,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  )
-                : null,
-            trailing: Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (todo.dueTime != null)
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isOverdue
-                          ? Colors.red.withOpacity(0.1)
-                          : currentCategoryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.access_time,
-                          size: 14,
-                          color: isOverdue ? Colors.red : currentCategoryColor,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          todo.dueTime!.format(context),
-                          style: GoogleFonts.inter(
-                            color:
-                                isOverdue ? Colors.red : currentCategoryColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
+                Icon(
+                  Icons.access_time,
+                  size: 14,
+                  color: isOverdue ? Colors.red : currentCategoryColor,
+                ),
+                SizedBox(width: 4),
+                Text(
+                  todo.dueTime!.format(context),
+                  style: GoogleFonts.inter(
+                    color: isOverdue ? Colors.red : currentCategoryColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
-                if (isOverdue)
-                  TextButton(
-                    onPressed: () => _showRescheduleDialog(context, todo),
-                    child: Text(
-                      'Reschedule',
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13,
-                        color: Colors.red,
-                      ),
-                    ),
-                  ),
+                ),
               ],
             ),
           ),
-          _buildSubtaskList(todo), // Pass the function to subtask list
-        ],
-      ),
+        if (isOverdue)
+          TextButton(
+            onPressed: () => _showRescheduleDialog(context, todo),
+            child: Text(
+              'Reschedule',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: Colors.red,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
