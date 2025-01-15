@@ -295,25 +295,6 @@ class TodoStorage {
   }
 }
 
-// Simple user preferences storage
-class UserPreferences {
-  static const String _userKey = 'user_preferences';
-
-  Future<void> saveUserPreferences(Map<String, dynamic> preferences) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_userKey, jsonEncode(preferences));
-  }
-
-  Future<Map<String, dynamic>> getUserPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? prefsJson = prefs.getString(_userKey);
-    if (prefsJson != null) {
-      return jsonDecode(prefsJson);
-    }
-    return {};
-  }
-  
-}
 
 class SubTask {
   final String id;
