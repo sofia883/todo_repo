@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:to_do_app/screens/profile_page.dart';
 import 'package:to_do_app/data/todo_service.dart';
 import 'package:uuid/uuid.dart';
@@ -81,10 +82,11 @@ class _TodoListState extends State<TodoList> {
 
   Widget _buildMonthYearSelector() {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: PopupMenuButton<DateTime>(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: InkWell(
+        onTap: () => _showMonthYearDialog(),
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -92,7 +94,7 @@ class _TodoListState extends State<TodoList> {
               BoxShadow(
                 color: Colors.black.withOpacity(0.05),
                 blurRadius: 10,
-                offset: Offset(0, 4),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -107,42 +109,129 @@ class _TodoListState extends State<TodoList> {
                   color: Colors.black87,
                 ),
               ),
-              Icon(Icons.arrow_drop_down),
+              const Icon(Icons.arrow_drop_down),
             ],
           ),
         ),
-        onSelected: (DateTime date) {
-          setState(() {
-            displayedMonth = date;
-            selectedDate = date;
-          });
-        },
-        itemBuilder: (BuildContext context) {
-          final currentYear = DateTime.now().year;
-          List<PopupMenuItem<DateTime>> items = [];
-
-          // Generate items for next 2 years
-          for (int year = currentYear; year <= currentYear + 1; year++) {
-            for (int month = 1; month <= 12; month++) {
-              // Skip past months for current year
-              if (year == currentYear && month < DateTime.now().month) continue;
-
-              final date = DateTime(year, month);
-              items.add(
-                PopupMenuItem<DateTime>(
-                  value: date,
-                  child: Text(
-                    '${_getMonthName(month)} $year',
-                    style: GoogleFonts.inter(),
-                  ),
-                ),
-              );
-            }
-          }
-          return items;
-        },
       ),
     );
+  }
+
+  void _showMonthYearDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        int selectedYear = displayedMonth.year;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              contentPadding: const EdgeInsets.all(16),
+              content: SizedBox(
+                width: 300,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Year selector
+                    Row(
+                      children: [
+                        DropdownButton<int>(
+                          value: selectedYear,
+                          items: [
+                            for (int year = DateTime.now().year;
+                                year <= DateTime.now().year + 4;
+                                year++)
+                              DropdownMenuItem(
+                                value: year,
+                                child: Text(
+                                  year.toString(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                          onChanged: (int? year) {
+                            if (year != null) {
+                              setState(() => selectedYear = year);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Months grid
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (int month = 1; month <= 12; month++)
+                          if (!(selectedYear == DateTime.now().year &&
+                              month < DateTime.now().month))
+                            InkWell(
+                              onTap: () {
+                                final newDate = DateTime(selectedYear, month);
+                                Navigator.of(context).pop();
+                                this.setState(() {
+                                  displayedMonth = newDate;
+                                  selectedDate = newDate;
+                                });
+                              },
+                              child: Container(
+                                width: 60,
+                                height: 60,
+                                decoration: BoxDecoration(
+                                  color: month == displayedMonth.month &&
+                                          selectedYear == displayedMonth.year
+                                      ? Theme.of(context)
+                                          .primaryColor
+                                          .withOpacity(0.1)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: month == displayedMonth.month &&
+                                            selectedYear == displayedMonth.year
+                                        ? Theme.of(context).primaryColor
+                                        : Colors.grey.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _getMonthName(month).substring(0, 3),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight:
+                                          month == displayedMonth.month &&
+                                                  selectedYear ==
+                                                      displayedMonth.year
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                      color: month == displayedMonth.month &&
+                                              selectedYear ==
+                                                  displayedMonth.year
+                                          ? Theme.of(context).primaryColor
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+// Helper method to get month name
+  String _getMonthName(int month) {
+    return DateFormat('MMMM').format(DateTime(2024, month));
   }
 
   Future<bool> _showTaskCompletionDialog(
@@ -411,11 +500,9 @@ class _TodoListState extends State<TodoList> {
               ),
             ),
             confirmDismiss: (direction) async {
-              // Remove item from UI immediately when delete is confirmed
-              bool? shouldDelete = await showDialog<bool>(
+              await showDialog<bool>(
                 context: context,
-                barrierDismissible:
-                    false, // Prevent dismissing by tapping outside
+                barrierDismissible: false,
                 builder: (BuildContext context) {
                   return AlertDialog(
                     title: Text('Delete Task'),
@@ -427,13 +514,10 @@ class _TodoListState extends State<TodoList> {
                       ),
                       TextButton(
                         onPressed: () {
-                          // First pop the dialog
                           Navigator.of(context).pop(true);
-                          // Immediately remove the item from UI
                           setState(() {
                             todos.remove(todo);
                           });
-                          // Then show the snackbar
                           handleDelete(todo);
                         },
                         child: Text(
@@ -449,7 +533,6 @@ class _TodoListState extends State<TodoList> {
               // Return false to prevent Dismissible's default animation
               return false;
             },
-            // We don't need onDismissed anymore since we handle deletion in confirmDismiss
             child: Container(
                 child: Container(
               decoration: BoxDecoration(
@@ -1392,6 +1475,7 @@ class _TodoListState extends State<TodoList> {
       ),
       body: SafeArea(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildMonthYearSelector(),
             _buildCalendar(),
@@ -2049,24 +2133,6 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
-  String _getMonthName(int month) {
-    const monthNames = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December'
-    ];
-    return monthNames[month - 1];
-  }
-
   void _showAddSubtaskDialog(TodoItem todo) {
     final TextEditingController subtaskController = TextEditingController();
 
@@ -2115,5 +2181,136 @@ class _TodoListState extends State<TodoList> {
 
   int _getDaysInMonth(DateTime date) {
     return DateTime(date.year, date.month + 1, 0).day;
+  }
+}
+
+class MonthYearSelector extends StatefulWidget {
+  final Function(DateTime) onDateSelected;
+  final DateTime initialDate;
+
+  const MonthYearSelector({
+    Key? key,
+    required this.onDateSelected,
+    required this.initialDate,
+  }) : super(key: key);
+
+  @override
+  State<MonthYearSelector> createState() => _MonthYearSelectorState();
+}
+
+class _MonthYearSelectorState extends State<MonthYearSelector> {
+  late int selectedYear;
+  late int selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedYear = widget.initialDate.year;
+    selectedMonth = widget.initialDate.month;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Year Dropdown
+          DropdownButton<int>(
+            value: selectedYear,
+            isExpanded: true,
+            items: List.generate(10, (index) {
+              final year = DateTime.now().year + index;
+              return DropdownMenuItem(
+                value: year,
+                child: Text(
+                  year.toString(),
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              );
+            }),
+            onChanged: (int? year) {
+              if (year != null) {
+                setState(() {
+                  selectedYear = year;
+                });
+              }
+            },
+          ),
+
+          const SizedBox(height: 16),
+
+          // Months Grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              final month = index + 1;
+              final isSelected = month == selectedMonth &&
+                  selectedYear == widget.initialDate.year;
+              final isCurrentYear = selectedYear == DateTime.now().year;
+              final isPastMonth = isCurrentYear && month < DateTime.now().month;
+
+              return Material(
+                color: isSelected
+                    ? Colors.blue.withOpacity(0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: isPastMonth
+                      ? null
+                      : () {
+                          setState(() {
+                            selectedMonth = month;
+                          });
+                          widget.onDateSelected(DateTime(selectedYear, month));
+                        },
+                  child: Container(
+                    alignment: Alignment.center,
+                    child: Text(
+                      DateFormat('MMM').format(DateTime(2024, month)),
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                        color: isPastMonth
+                            ? Colors.grey.withOpacity(0.5)
+                            : isSelected
+                                ? Colors.blue
+                                : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }

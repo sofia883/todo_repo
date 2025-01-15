@@ -103,62 +103,65 @@ class _ProfilePageState extends State<ProfilePage> {
   void _showTaskDetailsBottomSheet(String title, List<TodoItem> tasks) {
     showModalBottomSheet(
       context: context,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (context) => Container(
         padding: EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '$title Tasks',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
+            Text('$title Tasks (${tasks.length})',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             Divider(),
             if (tasks.isEmpty)
               Padding(
                 padding: EdgeInsets.all(16),
-                child: Center(
-                  child: Text('No $title tasks found'),
-                ),
+                child: Text('No tasks'),
               )
             else
               Expanded(
                 child: ListView.builder(
-                  shrinkWrap: true,
                   itemCount: tasks.length,
                   itemBuilder: (context, index) {
                     final task = tasks[index];
+                    final taskDueDateTime = DateTime(
+                      task.dueDate.year,
+                      task.dueDate.month,
+                      task.dueDate.day,
+                      task.dueTime?.hour ?? 23,
+                      task.dueTime?.minute ?? 59,
+                    );
+
+                    final now = DateTime.now();
+                    final difference = taskDueDateTime.difference(now);
+
+                    String timeStatus;
+                    if (_isTaskOverdue(task)) {
+                      if (difference.inDays < -1) {
+                        timeStatus = 'Overdue by ${-difference.inDays} days';
+                      } else if (difference.inHours < -1) {
+                        timeStatus = 'Overdue by ${-difference.inHours} hours';
+                      } else {
+                        timeStatus =
+                            'Overdue by ${-difference.inMinutes} minutes';
+                      }
+                    } else {
+                      if (difference.inDays > 0) {
+                        timeStatus = 'Due in ${difference.inDays} days';
+                      } else if (difference.inHours > 0) {
+                        timeStatus = 'Due in ${difference.inHours} hours';
+                      } else {
+                        timeStatus = 'Due in ${difference.inMinutes} minutes';
+                      }
+                    }
+
                     return ListTile(
                       leading: Icon(
-                        task.isCompleted ? Icons.check_circle : Icons.pending,
-                        color: task.isCompleted ? Colors.green : Colors.orange,
+                        _isTaskOverdue(task) ? Icons.warning : Icons.schedule,
+                        color:
+                            _isTaskOverdue(task) ? Colors.red : Colors.orange,
                       ),
-                      title: Text(
-                        task.title,
-                        style: TextStyle(
-                          decoration: task.isCompleted
-                              ? TextDecoration.lineThrough
-                              : null,
-                        ),
-                      ),
-                      subtitle: Text(
-                        'Due: ${task.dueDate.toString().split(' ')[0]}',
-                      ),
+                      title: Text(task.title),
+                      subtitle: Text(timeStatus),
                     );
                   },
                 ),
@@ -167,6 +170,32 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ),
     );
+  }
+
+  List<TodoItem> _getOverdueTasks(List<TodoItem> todos) {
+    return todos.where((task) => _isTaskOverdue(task)).toList();
+  }
+
+  bool _isTaskOverdue(TodoItem task) {
+    if (task.isCompleted) return false; // Completed tasks are not overdue
+    final now = DateTime.now();
+    final taskDueDateTime = DateTime(
+      task.dueDate.year,
+      task.dueDate.month,
+      task.dueDate.day,
+      task.dueTime?.hour ?? 23,
+      task.dueTime?.minute ?? 59,
+    );
+    return taskDueDateTime.isBefore(now);
+  }
+
+  List<TodoItem> _getPendingTasks(List<TodoItem> todos) {
+    return todos
+        .where((task) =>
+                !task.isCompleted && // Not completed
+                !_isTaskOverdue(task) // Not overdue
+            )
+        .toList();
   }
 
   @override
@@ -193,18 +222,12 @@ class _ProfilePageState extends State<ProfilePage> {
           }
 
           final todos = snapshot.data ?? [];
+
+          // Get all task categories using the new methods
           final completedTasks =
               todos.where((todo) => todo.isCompleted).toList();
-          final now = DateTime.now();
-          final startOfToday = DateTime(now.year, now.month, now.day);
-          final overdueTasks = todos
-              .where((todo) =>
-                  !todo.isCompleted && todo.dueDate.isBefore(startOfToday))
-              .toList();
-          final upcomingTasks = todos
-              .where((todo) =>
-                  !todo.isCompleted && !todo.dueDate.isBefore(startOfToday))
-              .toList();
+          final overdueTasks = _getOverdueTasks(todos);
+          final pendingTasks = _getPendingTasks(todos);
 
           return SingleChildScrollView(
             padding: EdgeInsets.all(16),
@@ -286,8 +309,6 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   ),
                 ),
-
-                // Statistics Cards
                 SizedBox(height: 20),
                 Row(
                   children: [
@@ -305,11 +326,11 @@ class _ProfilePageState extends State<ProfilePage> {
                     Expanded(
                       child: _buildStatCard(
                         'Pending',
-                        '${upcomingTasks.length}',
+                        '${pendingTasks.length}',
                         Icons.pending_actions,
                         Colors.orange,
                         onTap: () => _showTaskDetailsBottomSheet(
-                            'Pending', upcomingTasks),
+                            'Pending', pendingTasks),
                       ),
                     ),
                   ],
@@ -332,11 +353,13 @@ class _ProfilePageState extends State<ProfilePage> {
                     Expanded(
                       child: _buildStatCard(
                         'Progress',
-                        '${((completedTasks.length / todos.length) * 100).toStringAsFixed(0)}%',
+                        '${((completedTasks.length / (todos.isEmpty ? 1 : todos.length)) * 100).toStringAsFixed(0)}%',
                         Icons.pie_chart,
                         Colors.blue,
                         showProgress: true,
-                        progress: completedTasks.length / todos.length,
+                        progress: todos.isEmpty
+                            ? 0
+                            : completedTasks.length / todos.length,
                       ),
                     ),
                   ],
