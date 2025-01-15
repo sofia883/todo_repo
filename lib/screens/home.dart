@@ -227,6 +227,68 @@ class _TodoListState extends State<TodoList> {
       }
     }
 
+    Future<void> handleDelete(TodoItem todo) async {
+      final deletedTodo = todo;
+
+      try {
+        await _todoStorage.deleteTodo(todo.id);
+
+        if (!context.mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Task deleted'),
+            action: SnackBarAction(
+              label: 'UNDO',
+              onPressed: () async {
+                try {
+                  setState(() {
+                    todos.add(deletedTodo);
+                  });
+
+                  await _todoStorage.addTodo(deletedTodo);
+
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Task restored'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  setState(() {
+                    todos.remove(deletedTodo);
+                  });
+
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to restore task'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      } catch (e) {
+        // If deletion fails, restore the item to UI
+        setState(() {
+          todos.add(deletedTodo);
+        });
+
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete task'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+
     Future<void> handleMainTaskStatusChange(
         bool? newValue, StateSetter setState) async {
       if (newValue == null) return;
@@ -334,205 +396,154 @@ class _TodoListState extends State<TodoList> {
     return StatefulBuilder(
       builder: (context, setState) {
         return Dismissible(
-          key: ValueKey(todo.id),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: EdgeInsets.only(right: 20),
-            decoration: BoxDecoration(
-              color: Colors.red,
-              borderRadius: BorderRadius.circular(16),
+            key: Key(todo.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              alignment: Alignment.centerRight,
+              padding: EdgeInsets.only(right: 20),
+              child: Icon(
+                Icons.delete,
+                color: Colors.white,
+              ),
             ),
-            child: Icon(Icons.delete, color: Colors.white),
-          ),
-          confirmDismiss: (direction) async {
-            return await showDialog<bool>(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
+            confirmDismiss: (direction) async {
+              // Remove item from UI immediately when delete is confirmed
+              bool? shouldDelete = await showDialog<bool>(
+                context: context,
+                barrierDismissible:
+                    false, // Prevent dismissing by tapping outside
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    title: Text('Delete Task'),
+                    content: Text('Are you sure you want to delete this task?'),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text('CANCEL'),
                       ),
-                      title: Text(
-                        'Delete Task?',
-                        style: GoogleFonts.aBeeZee(
-                          fontWeight: FontWeight.bold,
+                      TextButton(
+                        onPressed: () {
+                          // First pop the dialog
+                          Navigator.of(context).pop(true);
+                          // Immediately remove the item from UI
+                          setState(() {
+                            todos.remove(todo);
+                          });
+                          // Then show the snackbar
+                          handleDelete(todo);
+                        },
+                        child: Text(
+                          'DELETE',
+                          style: TextStyle(color: Colors.red),
                         ),
                       ),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Are you sure you want to delete this task?',
-                            style: GoogleFonts.aBeeZee(),
-                          ),
-                          SizedBox(height: 12),
-                          Text(todo.title, style: GoogleFonts.aBeeZee()),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          child: Text(
-                            'Cancel',
-                            style: GoogleFonts.aBeeZee(color: Colors.grey[600]),
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            'Delete',
-                            style: GoogleFonts.aBeeZee(color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ) ??
-                false;
-          },
-          onDismissed: (direction) async {
-            // Store the task for undo functionality
-            final deletedTodo = todo;
-
-            try {
-              await _todoStorage.deleteTodo(todo.id);
-
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Task deleted'),
-                  action: SnackBarAction(
-                    label: 'Undo',
-                    onPressed: () async {
-                      try {
-                        await _todoStorage.addTodo(deletedTodo);
-                        setState(() {
-                          // Refresh the tasks list
-                          _loadTodos(); // Make sure you have this method to reload tasks
-                        });
-                      } catch (e) {
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Failed to restore task'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                ),
-              );
-            } catch (e) {
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Failed to delete task'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              color: isOverdue ? Colors.red[50] : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: isOverdue
-                      ? Colors.red.withOpacity(0.08)
-                      : currentCategoryColor.withOpacity(0.08),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                ListTile(
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isOverdue
-                          ? Colors.red[100]
-                          : currentCategoryColor.withOpacity(0.1),
-                    ),
-                    child: Checkbox(
-                      value: todo.isCompleted,
-                      onChanged: (bool? newValue) =>
-                          handleMainTaskStatusChange(newValue, setState),
-                      activeColor:
-                          isOverdue ? Colors.red : currentCategoryColor,
-                    ),
-                  ),
-                  title: Text(
-                    todo.title.isEmpty ? 'Untitled Task' : todo.title,
-                    style: GoogleFonts.poppins(
-                      decoration:
-                          todo.isCompleted ? TextDecoration.lineThrough : null,
-                      color:
-                          todo.isCompleted ? Colors.grey[400] : Colors.black87,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      height: 1.3,
-                    ),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (todo.description.isNotEmpty)
-                        Text(
-                          todo.description,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            height: 1.4,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      if (todo.subtasks.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              areSubtasksExpanded = !areSubtasksExpanded;
-                            });
-                          },
-                          icon: Icon(
-                            areSubtasksExpanded
-                                ? Icons.keyboard_arrow_up
-                                : Icons.keyboard_arrow_down,
-                            size: 20,
-                            color: currentCategoryColor,
-                          ),
-                          label: Text(
-                            '${todo.subtasks.length} subtasks',
-                            style: GoogleFonts.inter(
-                              color: currentCategoryColor,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
                     ],
+                  );
+                },
+              );
+
+              // Return false to prevent Dismissible's default animation
+              return false;
+            },
+            // We don't need onDismissed anymore since we handle deletion in confirmDismiss
+            child: Container(
+                child: Container(
+              decoration: BoxDecoration(
+                color: isOverdue ? Colors.red[50] : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: isOverdue
+                        ? Colors.red.withOpacity(0.08)
+                        : currentCategoryColor.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
                   ),
-                  trailing: _buildTaskTrailing(todo, isOverdue, context),
-                ),
-                if (areSubtasksExpanded) _buildSubtaskList(),
-              ],
-            ),
-          ),
-        );
+                ],
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    leading: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isOverdue
+                            ? Colors.red[100]
+                            : currentCategoryColor.withOpacity(0.1),
+                      ),
+                      child: Checkbox(
+                        value: todo.isCompleted,
+                        onChanged: (bool? newValue) =>
+                            handleMainTaskStatusChange(newValue, setState),
+                        activeColor:
+                            isOverdue ? Colors.red : currentCategoryColor,
+                      ),
+                    ),
+                    title: Text(
+                      todo.title.isEmpty ? 'Untitled Task' : todo.title,
+                      style: GoogleFonts.poppins(
+                        decoration: todo.isCompleted
+                            ? TextDecoration.lineThrough
+                            : null,
+                        color: todo.isCompleted
+                            ? Colors.grey[400]
+                            : Colors.black87,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        height: 1.3,
+                      ),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (todo.description.isNotEmpty)
+                          Text(
+                            todo.description,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              height: 1.4,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        if (todo.subtasks.isNotEmpty)
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                areSubtasksExpanded = !areSubtasksExpanded;
+                              });
+                            },
+                            icon: Icon(
+                              areSubtasksExpanded
+                                  ? Icons.keyboard_arrow_up
+                                  : Icons.keyboard_arrow_down,
+                              size: 20,
+                              color: currentCategoryColor,
+                            ),
+                            label: Text(
+                              '${todo.subtasks.length} subtasks',
+                              style: GoogleFonts.inter(
+                                color: currentCategoryColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    trailing: _buildTaskTrailing(todo, isOverdue, context),
+                  ),
+                  if (areSubtasksExpanded) _buildSubtaskList(),
+                ],
+              ),
+            )));
       },
     );
   }
