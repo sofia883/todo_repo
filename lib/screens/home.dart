@@ -314,7 +314,7 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
-// Helper method to get month name
+ // Helper method to get month name
   String _getMonthName(int month) {
     return DateFormat('MMMM').format(DateTime(2024, month));
   }
@@ -860,14 +860,19 @@ class _TodoListState extends State<TodoList> {
               : null,
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min, // Allow the row to wrap its content
           children: [
-            Text(
-              text,
-              style: GoogleFonts.inter(
-                fontSize: fontSize,
-                color: isSelected ? Colors.black87 : Colors.grey[600],
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                letterSpacing: -0.2,
+            Flexible(
+              // Prevent text overflow
+              child: Text(
+                text,
+                overflow: TextOverflow.ellipsis, // Truncate if still too long
+                style: GoogleFonts.inter(
+                  fontSize: fontSize,
+                  color: isSelected ? Colors.black87 : Colors.grey[600],
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
             if (isSelected) ...[
