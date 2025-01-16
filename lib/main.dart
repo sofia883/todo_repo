@@ -8,12 +8,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'data/todo_service.dart';
 import 'screens/profile_page.dart';
+import 'package:workmanager/workmanager.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 // Timer for checking overdue tasks
 Timer? overdueCheckTimer;
+
+// Background task name
+const String taskName = "checkOverdueTasks";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,16 +28,35 @@ Future<void> main() async {
   // Initialize notifications
   await initializeNotifications();
 
-  // Start checking for overdue tasks
-  startOverdueTaskCheck();
+  // Initialize Workmanager
+  await Workmanager().initialize(callbackDispatcher, isInDebugMode: true);
+
+  // Register periodic task
+  await Workmanager().registerPeriodicTask(
+    "todoCheck",
+    taskName,
+    frequency: Duration(minutes: 15), // Minimum interval allowed by Android
+    constraints: Constraints(
+      networkType: NetworkType.connected,
+      requiresBatteryNotLow: false,
+      requiresCharging: false,
+      requiresDeviceIdle: false,
+    ),
+  );
 
   runApp(MyApp());
 }
 
-void startOverdueTaskCheck() {
-  // Check every minute for overdue tasks
-  overdueCheckTimer = Timer.periodic(Duration(minutes: 1), (timer) {
-    checkForOverdueTasks();
+// This is the function that will be called in the background
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    switch (task) {
+      case taskName:
+        await checkForOverdueTasks();
+        break;
+    }
+    return Future.value(true);
   });
 }
 
@@ -53,13 +76,50 @@ Future<void> checkForOverdueTasks() async {
         todo.dueTime?.minute ?? 59,
       );
 
-      // Check if task just became overdue (within the last minute)
-      if (taskDueDateTime.isBefore(now) &&
-          taskDueDateTime.isAfter(now.subtract(Duration(minutes: 1)))) {
-        showOverdueNotification(todo);
+      // Check if task is overdue
+      if (taskDueDateTime.isBefore(now)) {
+        // Schedule a notification for overdue task
+        await scheduleNotification(todo);
       }
     }
   }
+}
+
+Future<void> scheduleNotification(TodoItem todo) async {
+  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    'overdue_tasks',
+    'Overdue Tasks',
+    channelDescription: 'Notifications for overdue tasks',
+    importance: Importance.high,
+    priority: Priority.high,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+    presentAlert: true,
+    presentBadge: true,
+    presentSound: true,
+  );
+
+  const NotificationDetails notificationDetails = NotificationDetails(
+    android: androidDetails,
+    iOS: iosDetails,
+  );
+
+  await flutterLocalNotificationsPlugin.show(
+    todo.hashCode,
+    'Task Overdue!',
+    'The task "${todo.title}" is now overdue',
+    notificationDetails,
+  );
+}
+
+void startOverdueTaskCheck() {
+  // Check every minute for overdue tasks
+  overdueCheckTimer = Timer.periodic(Duration(minutes: 1), (timer) {
+    checkForOverdueTasks();
+  });
 }
 
 Future<void> showOverdueNotification(TodoItem todo) async {

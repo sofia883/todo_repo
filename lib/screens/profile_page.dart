@@ -21,7 +21,6 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _nameController =
       TextEditingController(text: 'User Name');
   bool _isEditingName = false;
-
   @override
   void dispose() {
     _nameController.dispose();
@@ -201,243 +200,282 @@ class _ProfilePageState extends State<ProfilePage> {
               todos.where((todo) => todo.isCompleted).toList();
           final overdueTasks = _getOverdueTasks(todos);
           final pendingTasks = _getPendingTasks(todos);
-
           double progressValue =
               todos.isEmpty ? 0 : completedTasks.length / todos.length;
 
-          return Stack(
-            children: [
-              // Curved Background
-              Container(
-                height: 280,
-                decoration: BoxDecoration(
-                  color: Colors.indigo,
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(50),
-                    bottomRight: Radius.circular(50),
+          return CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 340,
+                floating: false,
+                pinned: true,
+                backgroundColor: Theme.of(context).primaryColor,
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Container(
+                    decoration: BoxDecoration(color: Colors.white),
+                    child: SafeArea(
+                      child: Stack(
+                        children: [
+                          // Progress Indicator positioned at top right
+                          Positioned(
+                            top: 20,
+                            right: 20,
+                            child: Container(
+                              width: 120,
+                              height: 120,
+                              child: CircularPercentIndicator(
+                                radius: 60,
+                                lineWidth: 12,
+                                percent: progressValue,
+                                center: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '${(progressValue * 100).toStringAsFixed(0)}%',
+                                      style: TextStyle(
+                                        color: Theme.of(context).primaryColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 28,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Complete',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                progressColor: Theme.of(context).primaryColor,
+                                backgroundColor: Colors.grey[200]!,
+                                circularStrokeCap: CircularStrokeCap.round,
+                              ),
+                            ),
+                          ),
+                          // Profile content
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(height: 20),
+                              // Profile Image with Edit Button
+                              Stack(
+                                alignment: Alignment.bottomRight,
+                                children: [
+                                  GestureDetector(
+                                    onTap: _showImagePickerOptions,
+                                    child: Container(
+                                      width: 120,
+                                      height: 120,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: Colors.white, width: 4),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.2),
+                                            blurRadius: 10,
+                                            spreadRadius: 2,
+                                          ),
+                                        ],
+                                      ),
+                                      child: CircleAvatar(
+                                        backgroundColor: Colors.grey[200],
+                                        backgroundImage: _profileImage != null
+                                            ? FileImage(_profileImage!)
+                                                as ImageProvider
+                                            : null,
+                                        child: _profileImage == null
+                                            ? Icon(Icons.person,
+                                                size: 60,
+                                                color: Colors.grey[400])
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 5,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(Icons.camera_alt,
+                                        size: 20,
+                                        color: Theme.of(context).primaryColor),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 16),
+                              // User Name with Edit
+                              if (_isEditingName)
+                                Container(
+                                  width: 200,
+                                  child: TextField(
+                                    controller: _nameController,
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).primaryColor,
+                                    ),
+                                    decoration: InputDecoration(
+                                      border: UnderlineInputBorder(
+                                        borderSide: BorderSide(
+                                            color:
+                                                Theme.of(context).primaryColor),
+                                      ),
+                                      suffixIcon: IconButton(
+                                        icon: Icon(Icons.check,
+                                            color:
+                                                Theme.of(context).primaryColor),
+                                        onPressed: () => setState(
+                                            () => _isEditingName = false),
+                                      ),
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                              else
+                                GestureDetector(
+                                  onTap: () =>
+                                      setState(() => _isEditingName = true),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        _nameController.text,
+                                        style: TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.bold,
+                                          color: Theme.of(context).primaryColor,
+                                        ),
+                                      ),
+                                      SizedBox(width: 8),
+                                      Icon(Icons.edit,
+                                          color: Theme.of(context)
+                                              .primaryColor
+                                              .withOpacity(0.8),
+                                          size: 20),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-
-              SingleChildScrollView(
-                child: Column(
-                  children: [
-                    SizedBox(height: 50),
-                    // Top Section with Progress
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Back Button and Title
-                          Row(
-                            children: [
-                              IconButton(
-                                icon:
-                                    Icon(Icons.arrow_back, color: Colors.white),
-                                onPressed: () => Navigator.pop(context),
-                              ),
-                              Text(
-                                'Profile',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
+              // Statistics Cards
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(left: 4, bottom: 12),
+                        child: Text(
+                          'Task Overview',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
                           ),
-                          // Progress Indicator
-                          CircularPercentIndicator(
-                            radius: 30,
-                            lineWidth: 5,
-                            percent: progressValue,
-                            center: Text(
-                              '${(progressValue * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            progressColor: Colors.white,
-                            backgroundColor: Colors.white.withOpacity(0.2),
-                            circularStrokeCap: CircularStrokeCap.round,
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-
-                    // Profile Section
-                    Center(
-                      child: Column(
-                        children: [
-                          GestureDetector(
-                            onTap: _showImagePickerOptions,
-                            child: Container(
-                              width: 100,
-                              height: 100,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.white,
-                                border:
-                                    Border.all(color: Colors.white, width: 3),
-                              ),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  image: _profileImage != null
-                                      ? DecorationImage(
-                                          image: FileImage(_profileImage!),
-                                          fit: BoxFit.cover,
-                                        )
-                                      : null,
-                                ),
-                                child: _profileImage == null
-                                    ? Icon(Icons.camera_alt,
-                                        size: 40, color: Colors.grey)
-                                    : null,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 16),
-                          if (_isEditingName)
-                            Container(
-                              width: 200,
-                              child: TextField(
-                                controller: _nameController,
-                                style: TextStyle(color: Colors.white),
-                                decoration: InputDecoration(
-                                  suffixIcon: IconButton(
-                                    icon:
-                                        Icon(Icons.check, color: Colors.white),
-                                    onPressed: () {
-                                      setState(() => _isEditingName = false);
-                                    },
-                                  ),
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            )
-                          else
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  _nameController.text,
-                                  style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.edit, color: Colors.white),
-                                  onPressed: () {
-                                    setState(() => _isEditingName = true);
-                                  },
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    SizedBox(height: 30),
-
-                    // Stats Cards in Single Row
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
+                      Row(
                         children: [
                           Expanded(
-                            child: _buildStatCard(
+                            child: _buildEnhancedStatCard(
                               'Completed',
                               completedTasks.length.toString(),
-                              Icons.check_circle,
-                              Colors.green,
+                              Icons.check_circle_outline,
+                              Colors.green[700]!,
                               onTap: () => _showTaskDetailsBottomSheet(
                                   'Completed', completedTasks),
                             ),
                           ),
-                          SizedBox(width: 8),
+                          SizedBox(width: 12),
                           Expanded(
-                            child: _buildStatCard(
+                            child: _buildEnhancedStatCard(
                               'Pending',
                               pendingTasks.length.toString(),
                               Icons.pending_actions,
-                              Colors.orange,
+                              Colors.orange[700]!,
                               onTap: () => _showTaskDetailsBottomSheet(
                                   'Pending', pendingTasks),
                             ),
                           ),
-                          SizedBox(width: 8),
+                          SizedBox(width: 12),
                           Expanded(
-                            child: _buildStatCard(
+                            child: _buildEnhancedStatCard(
                               'Overdue',
                               overdueTasks.length.toString(),
-                              Icons.warning,
-                              Colors.red,
+                              Icons.warning_outlined,
+                              Colors.red[700]!,
                               onTap: () => _showTaskDetailsBottomSheet(
                                   'Overdue', overdueTasks),
                             ),
                           ),
                         ],
                       ),
-                    ),
+                    ],
+                  ),
+                ),
+              ),
 
-                    SizedBox(height: 24),
-
-                    // Settings Section
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
+              // Settings Section
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(left: 4, bottom: 12),
+                        child: Text(
+                          'Settings',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
+                          ),
                         ),
-                        elevation: 4,
+                      ),
+                      Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         child: Column(
                           children: [
-                            _buildSettingsTile(
-                              'Account Information',
-                              Icons.person,
-                              Colors.blue,
+                            Divider(height: 1, indent: 70),
+                            _buildEnhancedSettingsTile(
+                              'Notifications',
+                              Icons.notifications_none,
+                              Colors.orange[700]!,
                               context,
-                            ),
-                            _buildSettingsTile(
-                              'Password',
-                              Icons.lock,
-                              Colors.green,
-                              context,
-                            ),
-                            _buildSettingsTile(
-                              'Settings',
-                              Icons.settings,
-                              Colors.orange,
-                              context,
-                            ),
-                            _buildSettingsTile(
-                              'Help & Support',
-                              Icons.help,
-                              Colors.purple,
-                              context,
-                            ),
-                            _buildSettingsTile(
-                              'Sign Out',
-                              Icons.logout,
-                              Colors.red,
-                              context,
-                              onTap: () {
-                                Navigator.pushReplacementNamed(
-                                    context, '/login');
-                              },
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              ),
+
+              // Bottom Padding
+              SliverToBoxAdapter(
+                child: SizedBox(height: 32),
               ),
             ],
           );
@@ -446,71 +484,93 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildStatCard(
+  Widget _buildEnhancedStatCard(
     String title,
     String value,
     IconData icon,
     Color color, {
     VoidCallback? onTap,
   }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(15),
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 32),
-              SizedBox(height: 12),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: color.withOpacity(0.2),
+            width: 1,
           ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 28),
+            SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                color: color.withOpacity(0.8),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
-}
 
-Widget _buildSettingsTile(
-    String title, IconData icon, Color color, BuildContext context,
-    {VoidCallback? onTap}) {
-  return ListTile(
-    leading: Container(
-      padding: EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+  Widget _buildEnhancedSettingsTile(
+    String title,
+    IconData icon,
+    Color color,
+    BuildContext context, {
+    VoidCallback? onTap,
+  }) {
+    return ListTile(
+      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      leading: Container(
+        padding: EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: color, size: 24),
       ),
-      child: Icon(icon, color: color),
-    ),
-    title: Text(title),
-    trailing: Icon(Icons.chevron_right),
-    onTap: onTap ??
-        () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$title settings coming soon')),
-          );
-        },
-  );
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: Colors.grey[800],
+        ),
+      ),
+      trailing: Icon(
+        Icons.chevron_right,
+        color: Colors.grey[400],
+      ),
+      onTap: onTap ??
+          () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$title settings coming soon'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          },
+    );
+  }
 }
 
 class _TaskListItem extends StatefulWidget {
@@ -698,5 +758,3 @@ class _TaskListItemState extends State<_TaskListItem> {
     );
   }
 }
-
-// ... (rest of the ProfilePage code remains the same)

@@ -35,14 +35,17 @@ class TodoListData {
       'categoryColor': categoryColor.value,
     };
   }
-}class TodoItem {
+}
+
+class TodoItem {
   final String id;
   final String title;
   final String description;
   final DateTime createdAt;
   final DateTime dueDate;
   final TimeOfDay? dueTime;
-   bool isSubtasksExpanded = false;
+  bool isSubtasksExpanded = false;
+  bool isOverdue = false;
   bool isCompleted;
   DateTime? completedAt;
   List<SubTask> subtasks; // Add this field
@@ -89,30 +92,14 @@ class TodoListData {
             )
           : null,
       isCompleted: json['isCompleted'],
-      completedAt:
-          json['completedAt'] != null ? DateTime.parse(json['completedAt']) : null,
+      completedAt: json['completedAt'] != null
+          ? DateTime.parse(json['completedAt'])
+          : null,
       subtasks: (json['subtasks'] as List?)
               ?.map((subtask) => SubTask.fromJson(subtask))
               .toList() ??
           [],
     );
-  }
-  bool get isOverdue {
-    final now = DateTime.now();
-    if (isCompleted) return false;
-
-    if (dueTime != null) {
-      final dueDateTime = DateTime(
-        dueDate.year,
-        dueDate.month,
-        dueDate.day,
-        dueTime!.hour,
-        dueTime!.minute,
-      );
-      return dueDateTime.isBefore(now);
-    }
-
-    return dueDate.isBefore(DateTime(now.year, now.month, now.day));
   }
 }
 
@@ -263,6 +250,7 @@ class TodoStorage {
       await _saveTodos(todos);
     }
   }
+
   Future<void> updateTodo(TodoItem todo) async {
     final todos = await _loadTodos();
     final index = todos.indexWhere((t) => t.id == todo.id);
@@ -295,7 +283,6 @@ class TodoStorage {
   }
 }
 
-
 class SubTask {
   final String id;
   final String title;
@@ -323,8 +310,9 @@ class SubTask {
       id: json['id'],
       title: json['title'],
       isCompleted: json['isCompleted'],
-      completedAt:
-          json['completedAt'] != null ? DateTime.parse(json['completedAt']) : null,
+      completedAt: json['completedAt'] != null
+          ? DateTime.parse(json['completedAt'])
+          : null,
     );
   }
 }
