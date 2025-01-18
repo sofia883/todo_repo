@@ -1,117 +1,189 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'dart:isolate';
-import 'dart:ui';
-
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest.dart' as tz;
 import 'package:to_do_app/data/todo_service.dart';
 
-class TodoAlarmService {
-  static const String NOTIFICATION_PORT_NAME = "todo_notification_port";
-  static FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
+class NotificationService {
+  static final NotificationService _instance = NotificationService._();
+  factory NotificationService() => _instance;
+  NotificationService._();
+
+  final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
-  static Future<void> initialize() async {
-    await AndroidAlarmManager.initialize();
+  Future<void> initialize() async {
+    try {
+      print('Initializing notification service...');
+      tz.initializeTimeZones();
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings();
-    const initSettings = InitializationSettings(
-      android: androidSettings, 
-      iOS: iosSettings
+      // Use ic_launcher instead of custom icon
+      const androidSettings =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+
+      const initializationSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
+
+      await _notifications.initialize(
+        initializationSettings,
+        onDidReceiveNotificationResponse: (details) {
+          print('Notification received: ${details.payload}');
+        },
+      );
+
+      // Create the notification channel
+      final AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'todo_notifications',
+        'Todo Notifications',
+        importance: Importance.max,
+        playSound: true,
+        showBadge: true,
+        enableLights: true,
+      );
+
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+
+      print('Notification service initialized successfully');
+    } catch (e) {
+      print('Error initializing notification service: $e');
+    }
+  }Future<void> scheduleTodoNotification(TodoItem todo) async {
+  try {
+    if (todo.dueTime == null) {
+      print('No due time set for todo: ${todo.title}');
+      return;
+    }
+
+    final DateTime dueDateTime = DateTime(
+      todo.dueDate.year,
+      todo.dueDate.month,
+      todo.dueDate.day,
+      todo.dueTime!.hour,
+      todo.dueTime!.minute,
     );
-    await flutterLocalNotificationsPlugin.initialize(initSettings);
 
-    final receivePort = ReceivePort();
-    IsolateNameServer.registerPortWithName(
-      receivePort.sendPort,
-      NOTIFICATION_PORT_NAME,
-    );
-  }
+    print('Scheduling notification for todo: ${todo.title}');
+    print('Due date time: $dueDateTime');
 
-  static Future<void> scheduleTaskCheck(TodoItem todo) async {
-    if (todo.isCompleted) return;
-
-    // Save task data to SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    final taskData = {
-      'id': todo.id,
-      'title': todo.title,
-      'description': todo.description,
-      'dueDate': todo.dueDate.toIso8601String(),
-      'dueTime': todo.dueTime != null 
-          ? {'hour': todo.dueTime!.hour, 'minute': todo.dueTime!.minute}
-          : null,
-    };
-    
-    await prefs.setString('task_${todo.id}', jsonEncode(taskData));
-
-    // Calculate exact due time
-    final dueDateTime = todo.dueTime != null
-        ? DateTime(
-            todo.dueDate.year,
-            todo.dueDate.month,
-            todo.dueDate.day,
-            todo.dueTime!.hour,
-            todo.dueTime!.minute,
-          )
-        : DateTime(
-            todo.dueDate.year,
-            todo.dueDate.month,
-            todo.dueDate.day,
-            23,
-            59,
-          );
-
-    // Schedule alarm at exact time
-    await AndroidAlarmManager.oneShot(
-      Duration(milliseconds: dueDateTime.millisecondsSinceEpoch - DateTime.now().millisecondsSinceEpoch),
-      todo.id.hashCode, // Alarm ID
-      checkAndNotifyOverdue,
-      exact: true,
-      wakeup: true,
-      rescheduleOnReboot: true,
-      params: taskData, // Pass the Map directly
-    );
-  }
-
-  static Future<void> cancelTaskAlarm(String todoId) async {
-    await AndroidAlarmManager.cancel(todoId.hashCode);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('task_${todoId}');
-  }
-
-  @pragma('vm:entry-point')
-  static Future<void> checkAndNotifyOverdue(int id, Map<String, dynamic> taskData) async {
-    final SendPort? sendPort = IsolateNameServer.lookupPortByName(NOTIFICATION_PORT_NAME);
-
-    final dueDate = DateTime.parse(taskData['dueDate']);
-    final now = DateTime.now();
-
-    if (now.isAfter(dueDate)) {
-      const androidDetails = AndroidNotificationDetails(
-        'overdue_tasks',
-        'Overdue Tasks',
-        channelDescription: 'Notifications for overdue tasks',
+    // For overdue tasks, show notification immediately
+    if (dueDateTime.isBefore(DateTime.now())) {
+      final androidDetails = AndroidNotificationDetails(
+        'todo_notifications',
+        'Todo Notifications',
+        channelDescription: 'Notifications for todo tasks',
         importance: Importance.max,
         priority: Priority.high,
-        ongoing: false,
-        autoCancel: true,
-        showWhen: true,
       );
 
-      const notificationDetails = NotificationDetails(
+      final notificationDetails = NotificationDetails(
         android: androidDetails,
-        iOS: DarwinNotificationDetails(),
+        iOS: const DarwinNotificationDetails(),
       );
 
-      await flutterLocalNotificationsPlugin.show(
-        id,
-        'Task Overdue!',
-        'The task "${taskData['title']}" is now overdue',
+      await _notifications.show(
+        '${todo.id}_overdue'.hashCode,
+        '❗ Task Overdue',
+        '${todo.title} is now overdue',
         notificationDetails,
+        payload: todo.id,
       );
+      return;
+    }
+
+    // For future tasks, schedule notifications as before
+    final DateTime reminderTime =
+        dueDateTime.subtract(const Duration(minutes: 15));
+    if (reminderTime.isAfter(DateTime.now())) {
+      await _scheduleNotification(
+        id: '${todo.id}_reminder'.hashCode,
+        title: '⏰ Upcoming Task',
+        body: '${todo.title} is due in 15 minutes',
+        scheduledDate: reminderTime,
+        payload: todo.id,
+      );
+    }
+
+    await _scheduleNotification(
+      id: '${todo.id}_overdue'.hashCode,
+      title: '❗ Task Overdue',
+      body: '${todo.title} is now overdue',
+      scheduledDate: dueDateTime,
+      payload: todo.id,
+    );
+  } catch (e) {
+    print('Error scheduling notification for todo ${todo.title}: $e');
+  }
+}Future<void> _scheduleNotification({
+  required int id,
+  required String title,
+  required String body,
+  required DateTime scheduledDate,
+  String? payload,
+}) async {
+  try {
+    final androidDetails = AndroidNotificationDetails(
+      'todo_notifications',
+      'Todo Notifications',
+      channelDescription: 'Notifications for todo tasks',
+      importance: Importance.max,
+      priority: Priority.high,
+      showWhen: true,
+      enableLights: true,
+      enableVibration: true,
+      channelShowBadge: true,
+    );
+
+    final iosDetails = const DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    final notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    final scheduledTime = tz.TZDateTime.from(scheduledDate, tz.local);
+    print('Scheduling notification for: $scheduledTime');
+    print('Current time: ${DateTime.now()}');
+
+    // Only schedule the actual notification
+    await _notifications.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduledTime,
+      notificationDetails,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: payload,
+    );
+
+    print('Notification scheduled successfully for ID: $id');
+  } catch (e) {
+    print('Error scheduling notification: $e');
+    print('Stack trace: ${StackTrace.current}');
+  }
+}
+
+  Future<void> cancelTodoNotifications(String todoId) async {
+    try {
+      await _notifications.cancel('${todoId}_reminder'.hashCode);
+      await _notifications.cancel('${todoId}_overdue'.hashCode);
+      print('Notifications cancelled for todo: $todoId');
+    } catch (e) {
+      print('Error cancelling notifications: $e');
     }
   }
 }

@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:to_do_app/data/todo_notification_service.dart';
 import 'package:to_do_app/screens/profile_page.dart';
 import 'package:to_do_app/data/todo_service.dart';
 import 'package:uuid/uuid.dart';
@@ -17,6 +20,7 @@ class TodoList extends StatefulWidget {
 }
 
 class _TodoListState extends State<TodoList> {
+  final NotificationService _notificationService = NotificationService();
   Timer? _timer;
   late List<TodoItem> todos;
   late DateTime selectedDate;
@@ -26,12 +30,16 @@ class _TodoListState extends State<TodoList> {
   bool showMyTasksOnly = false;
   bool isLoading = true;
   final ScrollController _calendarScrollController = ScrollController();
+  final TextEditingController _quickAddController = TextEditingController();
+  final TextEditingController _quickAddSubtaskController =
+      TextEditingController();
+
   StreamSubscription? _todoSubscription; // Add this
   final TodoStorage _todoStorage = TodoStorage();
   List<TodoItem> _currentTasks = [];
-
+  bool isQuickAddMode = false;
 // Update the timer check method
-  void _checkAndUpdateTasksStatus() {
+  void _checkAndUpdateTasksStatus() async {
     final now = DateTime.now();
     bool needsUpdate = false;
 
@@ -48,6 +56,7 @@ class _TodoListState extends State<TodoList> {
       if (!todo.isCompleted && dueDateTime.isBefore(now) && !todo.isOverdue) {
         todo.isOverdue = true;
         needsUpdate = true;
+        await _notificationService.scheduleTodoNotification(todo);
       }
     }
 
@@ -103,7 +112,8 @@ class _TodoListState extends State<TodoList> {
   @override
   void initState() {
     super.initState();
-    _startOverdueTimer();
+    _notificationService.initialize();
+    // _startOverdueTimer();
     selectedDate = DateTime.now();
     displayedMonth = DateTime.now();
     currentCategory = widget.todoListData?.category ?? 'Personal';
@@ -115,6 +125,8 @@ class _TodoListState extends State<TodoList> {
 
   @override
   void dispose() {
+    _quickAddController.dispose();
+    _quickAddSubtaskController.dispose();
     _todoSubscription?.cancel(); // Cancel subscription when disposing
     _timer?.cancel();
     super.dispose();
@@ -314,7 +326,7 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
- // Helper method to get month name
+// Helper method to get month name
   String _getMonthName(int month) {
     return DateFormat('MMMM').format(DateTime(2024, month));
   }
@@ -513,56 +525,6 @@ class _TodoListState extends State<TodoList> {
           ),
         );
       }
-    }
-
-    Widget _buildSubtaskList() {
-      return Column(
-        children: todo.subtasks.map((subtask) {
-          return ListTile(
-            leading: Checkbox(
-              value: subtask.isCompleted,
-              onChanged: (bool? newValue) async {
-                if (newValue == null) return;
-
-                setState(() {
-                  subtask.isCompleted = newValue;
-                  subtask.completedAt = newValue ? DateTime.now() : null;
-                });
-
-                updateMainTaskStatus(setState);
-
-                try {
-                  await _todoStorage.updateTodo(todo);
-                } catch (e) {
-                  setState(() {
-                    subtask.isCompleted = !newValue;
-                    subtask.completedAt = !newValue ? DateTime.now() : null;
-                    updateMainTaskStatus(setState);
-                  });
-
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Failed to update task status'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-              activeColor: currentCategoryColor,
-            ),
-            title: Text(
-              subtask.title,
-              style: GoogleFonts.poppins(
-                decoration:
-                    subtask.isCompleted ? TextDecoration.lineThrough : null,
-                color: subtask.isCompleted ? Colors.grey[400] : Colors.black87,
-                fontSize: 14,
-              ),
-            ),
-          );
-        }).toList(),
-      );
     }
 
     return StatefulBuilder(
@@ -809,29 +771,47 @@ class _TodoListState extends State<TodoList> {
     final upcomingTasks = _getTasksForSelectedDate();
     final overdueTasks = _getOverdueTasks();
 
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildTab(
-            'Upcoming tasks (${upcomingTasks.length})',
-            !showMyTasksOnly,
-            () {
-              setState(() => showMyTasksOnly = false);
-            },
-            fontSize: 13.0,
-          ),
-          SizedBox(width: 16),
-          _buildTab(
-            'Overdue tasks (${overdueTasks.length})',
-            showMyTasksOnly,
-            () {
-              setState(() => showMyTasksOnly = true);
-            },
-            fontSize: 13.0,
-          ),
-        ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            _buildTab(
+              'Upcoming (${upcomingTasks.length})',
+              !showMyTasksOnly && !isQuickAddMode,
+              () {
+                setState(() {
+                  showMyTasksOnly = false;
+                  isQuickAddMode = false;
+                });
+              },
+            ),
+            const SizedBox(width: 12),
+            _buildTab(
+              'Overdue (${overdueTasks.length})',
+              showMyTasksOnly && !isQuickAddMode,
+              () {
+                setState(() {
+                  showMyTasksOnly = true;
+                  isQuickAddMode = false;
+                });
+              },
+            ),
+            const SizedBox(width: 12),
+            _buildTab(
+              'Quick Add',
+              isQuickAddMode,
+              () {
+                setState(() {
+                  isQuickAddMode = !isQuickAddMode;
+                  showMyTasksOnly = false;
+                });
+              },
+              icon: Icons.add_circle_outline,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -840,67 +820,49 @@ class _TodoListState extends State<TodoList> {
     String text,
     bool isSelected,
     VoidCallback onTap, {
-    double fontSize = 20,
+    IconData? icon,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 5,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min, // Allow the row to wrap its content
-          children: [
-            Flexible(
-              // Prevent text overflow
-              child: Text(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 5,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 18,
+                  color: isSelected ? currentCategoryColor : Colors.grey[600],
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
                 text,
-                overflow: TextOverflow.ellipsis, // Truncate if still too long
                 style: GoogleFonts.inter(
-                  fontSize: fontSize,
+                  fontSize: 13,
                   color: isSelected ? Colors.black87 : Colors.grey[600],
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-            if (isSelected) ...[
-              SizedBox(width: 8),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: currentCategoryColor,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: currentCategoryColor.withOpacity(0.3),
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  '${todos.length}',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
                 ),
               ),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -937,101 +899,6 @@ class _TodoListState extends State<TodoList> {
         isLoading = false;
       });
     }
-  }
-
-  Widget _buildTaskTrailing(
-      TodoItem todo, bool isOverdue, BuildContext context) {
-    final accentColor = const Color(0xFF4355B9);
-    final TextStyle timeTextStyle = TextStyle(
-      color: isOverdue ? Colors.red[700] : Colors.grey[700],
-      fontSize: 13,
-      fontWeight: FontWeight.w500,
-      letterSpacing: -0.3,
-    );
-
-    return Flexible(
-      // Added Flexible to prevent overflow
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (todo.dueDate != null || todo.dueTime != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: isOverdue ? Colors.white : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.event,
-                    size: 14,
-                    color: isOverdue ? Colors.red[700] : Colors.grey[700],
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    // Added Flexible for text overflow
-                    child: Text(
-                      todo.dueDate != null
-                          ? DateFormat('MMM d').format(todo.dueDate!)
-                          : '',
-                      style: timeTextStyle,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (todo.dueDate != null && todo.dueTime != null)
-                    Text(
-                      ' • ',
-                      style: timeTextStyle,
-                    ),
-                  if (todo.dueTime != null)
-                    Text(
-                      todo.dueTime!.format(context),
-                      style: timeTextStyle,
-                    ),
-                ],
-              ),
-            ),
-          if (isOverdue)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: TextButton(
-                onPressed: () => _showRescheduleDialog(context, todo),
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.red.shade50,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  minimumSize: Size.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.schedule,
-                      size: 14,
-                      color: Colors.red[700],
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Reschedule',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: Colors.red[700],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 
 // Update the _buildTaskList method
@@ -1481,56 +1348,111 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
+  QuickTask _convertQuickTaskToTodoItem(QuickTask quickTask) {
+    return QuickTask(
+      id: quickTask.id,
+      title: quickTask.title,
+      createdAt: quickTask.createdAt,
+      subtasks: quickTask.subtasks,
+      // Add any additional TodoItem fields with default values
+      isCompleted: false,
+      // Add other required fields based on your TodoItem class structure
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return Center(
+      return const Center(
         child: CircularProgressIndicator(),
       );
     }
 
+    // Add this conversion method to your class
+    TodoItem _convertQuickTaskToTodoItem(QuickTask quickTask) {
+      return TodoItem(
+        id: quickTask.id,
+        title: quickTask.title,
+        description: '', // QuickTask doesn't have description
+        createdAt: quickTask.createdAt,
+        dueDate:
+            DateTime.now().add(const Duration(days: 1)), // Default to tomorrow
+        subtasks: quickTask.subtasks, // SubTask class is the same for both
+        isCompleted: quickTask.isCompleted,
+        completedAt: quickTask.completedAt,
+        isQuickTask: true, // Mark as a quick task
+      );
+    }
+
+    Widget mainContent;
+    if (isQuickAddMode) {
+      mainContent = QuickAddTaskSheet(
+        onTaskAdded: (QuickTask quickTask) {
+          setState(() {
+            // Convert QuickTask to TodoItem before adding
+            final todoItem = _convertQuickTaskToTodoItem(quickTask);
+            todos.add(todoItem);
+            isQuickAddMode = false;
+          });
+        },
+      );
+    } else {
+      mainContent = _buildTaskList();
+    }
+
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon:
-              Icon(Icons.account_circle, color: currentCategoryColor, size: 45),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (context) => ProfilePage(todos: todos)),
-            );
-          },
-        ),
-      ),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildMonthYearSelector(),
-            _buildCalendar(),
-            _buildTaskTabs(),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-                ),
-                child: _buildTaskList(),
-              ),
+        backgroundColor: Colors.grey[100],
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(
+              Icons.account_circle,
+              color: currentCategoryColor,
+              size: 45,
             ),
-          ],
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfilePage(todos: todos),
+                ),
+              );
+            },
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddTaskDialog(),
-        backgroundColor: currentCategoryColor,
-        child: Icon(Icons.add, color: Colors.white),
-      ),
-    );
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildMonthYearSelector(),
+              _buildCalendar(),
+              _buildTaskTabs(),
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(30),
+                    ),
+                  ),
+                  child: mainContent,
+                ),
+              ),
+            ],
+          ),
+        ),
+        floatingActionButton: isQuickAddMode
+            ? FloatingActionButton(
+                onPressed: () => setState(() => isQuickAddMode = true),
+                backgroundColor: currentCategoryColor,
+                child: const Icon(Icons.add, color: Colors.white),
+              )
+            : FloatingActionButton(
+                onPressed: _showAddTaskDialog, // Call the add task dialog
+                backgroundColor: currentCategoryColor,
+                child: const Icon(Icons.add_task, color: Colors.white),
+              ));
   }
 
   void _showAddTaskDialog() {
@@ -2166,52 +2088,6 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
-  void _showAddSubtaskDialog(TodoItem todo) {
-    final TextEditingController subtaskController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add Subtask', style: GoogleFonts.poppins()),
-        content: TextField(
-          controller: subtaskController,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'Enter subtask',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: Text('Cancel', style: GoogleFonts.inter()),
-            onPressed: () => Navigator.pop(context),
-          ),
-          ElevatedButton(
-            child: Text('Add', style: GoogleFonts.inter()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: currentCategoryColor,
-            ),
-            onPressed: () async {
-              if (subtaskController.text.trim().isNotEmpty) {
-                final newSubtask = SubTask(
-                  id: const Uuid().v4(),
-                  title: subtaskController.text.trim(),
-                );
-
-                todo.subtasks.add(newSubtask);
-                await _todoStorage.updateTodo(todo);
-                setState(() {});
-                Navigator.pop(context);
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   int _getDaysInMonth(DateTime date) {
     return DateTime(date.year, date.month + 1, 0).day;
   }
@@ -2345,5 +2221,152 @@ class _MonthYearSelectorState extends State<MonthYearSelector> {
         ],
       ),
     );
+  }
+}
+
+class QuickAddTaskSheet extends StatefulWidget {
+  final Function(QuickTask) onTaskAdded;
+
+  const QuickAddTaskSheet({
+    Key? key,
+    required this.onTaskAdded,
+  }) : super(key: key);
+
+  @override
+  _QuickAddTaskSheetState createState() => _QuickAddTaskSheetState();
+}
+
+class _QuickAddTaskSheetState extends State<QuickAddTaskSheet> {
+  final TextEditingController _titleController = TextEditingController();
+  final List<TextEditingController> _subtaskControllers = [
+    TextEditingController()
+  ];
+  final _formKey = GlobalKey<FormState>();
+
+  void _addSubtaskField() {
+    setState(() {
+      _subtaskControllers.add(TextEditingController());
+    });
+  }
+
+  void _removeSubtaskField(int index) {
+    setState(() {
+      _subtaskControllers[index].dispose();
+      _subtaskControllers.removeAt(index);
+    });
+  }
+
+  void _saveTask() {
+    if (!_formKey.currentState!.validate()) return;
+
+    // Create subtasks using SubTask instead of QuickSubTask
+    final subtasks = _subtaskControllers
+        .where((controller) => controller.text.isNotEmpty)
+        .map((controller) => SubTask(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              title: controller.text,
+              isCompleted: false,
+            ))
+        .toList();
+
+    final task = QuickTask(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      title: _titleController.text,
+      createdAt: DateTime.now(),
+      subtasks: subtasks, // Now this matches the expected type List<SubTask>
+    );
+
+    widget.onTaskAdded(task);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quick Add Task',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _titleController,
+              decoration: InputDecoration(
+                labelText: 'Task Title',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              validator: (value) {
+                if (value?.isEmpty ?? true) {
+                  return 'Please enter a task title';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _subtaskControllers.length,
+              itemBuilder: (context, index) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _subtaskControllers[index],
+                          decoration: InputDecoration(
+                            labelText: 'Subtask ${index + 1}',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_subtaskControllers.length > 1)
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: () => _removeSubtaskField(index),
+                          color: Colors.red,
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton.icon(
+                  onPressed: _addSubtaskField,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Subtask'),
+                ),
+                ElevatedButton(
+                  onPressed: _saveTask,
+                  child: const Text('Save Task'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    for (var controller in _subtaskControllers) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 }
