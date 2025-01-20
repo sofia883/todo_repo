@@ -33,12 +33,14 @@ class _TodoListState extends State<TodoList> {
   final TextEditingController _quickAddController = TextEditingController();
   final TextEditingController _quickAddSubtaskController =
       TextEditingController();
+  List<QuickTask> _quickTasks = [];
 
   StreamSubscription? _todoSubscription; // Add this
   final TodoStorage _todoStorage = TodoStorage();
   List<TodoItem> _currentTasks = [];
   bool isQuickAddMode = false;
 // Update the timer check method
+
   void _checkAndUpdateTasksStatus() async {
     final now = DateTime.now();
     bool needsUpdate = false;
@@ -113,6 +115,7 @@ class _TodoListState extends State<TodoList> {
   void initState() {
     super.initState();
     _notificationService.initialize();
+    QuickTaskService.loadTasks();
     // _startOverdueTimer();
     selectedDate = DateTime.now();
     displayedMonth = DateTime.now();
@@ -767,6 +770,279 @@ class _TodoListState extends State<TodoList> {
     );
   }
 
+  Widget _buildQuickTaskItem(QuickTask task, BuildContext context) {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Dismissible(
+          key: Key(task.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            child: const Icon(Icons.delete, color: Colors.white),
+          ),
+          confirmDismiss: (direction) async {
+            return await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Delete Task'),
+                    content: const Text(
+                        'Are you sure you want to delete this task?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('CANCEL'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('DELETE',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                ) ??
+                false;
+          },
+          onDismissed: (direction) async {
+            try {
+              await QuickTaskService.deleteTask(task.id);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Task deleted'),
+                  action: SnackBarAction(
+                    label: 'UNDO',
+                    onPressed: () async {
+                      try {
+                        await QuickTaskService.addTask(task);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Task restored'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to restore task'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              );
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Failed to delete task'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          child: Card(
+            elevation: 0,
+            margin: const EdgeInsets.only(bottom: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey[200]!),
+            ),
+            child: Theme(
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: task.subtasks.isEmpty
+                  ? ListTile(
+                      leading: Checkbox(
+                        value: task.isCompleted ?? false,
+                        onChanged: (bool? value) async {
+                          if (value == null) return;
+                          setState(() {
+                            task.isCompleted = value;
+                          });
+                          await QuickTaskService.updateTask(task);
+                        },
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      title: Text(
+                        task.title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          decoration: task.isCompleted == true
+                              ? TextDecoration.lineThrough
+                              : null,
+                          color: task.isCompleted == true
+                              ? Colors.grey
+                              : Colors.black87,
+                        ),
+                      ),
+                    )
+                  : ExpansionTile(
+                      tilePadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      leading: Checkbox(
+                        value: task.isCompleted ?? false,
+                        onChanged: (bool? value) async {
+                          if (value == null) return;
+                          setState(() {
+                            task.isCompleted = value;
+                            // Update all subtasks when main task is toggled
+                            for (var subtask in task.subtasks) {
+                              subtask.isCompleted = value;
+                            }
+                          });
+                          await QuickTaskService.updateTask(task);
+                        },
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      title: Text(
+                        task.title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          decoration: task.isCompleted == true
+                              ? TextDecoration.lineThrough
+                              : null,
+                          color: task.isCompleted == true
+                              ? Colors.grey
+                              : Colors.black87,
+                        ),
+                      ),
+                      children: task.subtasks.map((subtask) {
+                        return ListTile(
+                          contentPadding:
+                              const EdgeInsets.only(left: 72, right: 16),
+                          leading: Checkbox(
+                            value: subtask.isCompleted,
+                            onChanged: (bool? value) async {
+                              if (value == null) return;
+                              setState(() {
+                                subtask.isCompleted = value;
+
+                                // Check if all subtasks are completed
+                                bool allSubtasksCompleted =
+                                    task.subtasks.every((st) => st.isCompleted);
+
+                                // Update main task status based on subtasks
+                                task.isCompleted = allSubtasksCompleted;
+                              });
+                              await QuickTaskService.updateTask(task);
+                            },
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          title: Text(
+                            subtask.title,
+                            style: TextStyle(
+                              fontSize: 14,
+                              decoration: subtask.isCompleted
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                              color: subtask.isCompleted
+                                  ? Colors.grey
+                                  : Colors.black87,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    Widget mainContent = _buildTaskList();
+
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(
+            Icons.account_circle,
+            color: currentCategoryColor,
+            size: 45,
+          ),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProfilePage(todos: todos),
+              ),
+            );
+          },
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildMonthYearSelector(),
+            _buildCalendar(),
+            _buildTaskTabs(),
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(30),
+                  ),
+                ),
+                child: mainContent,
+              ),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          if (isQuickAddMode) {
+            final result = showQuickAddTaskSheet(
+              context,
+              (QuickTask newTask) {
+                setState(() {
+                  // Add the new task to your list immediately
+                  _quickTasks.add(newTask);
+                });
+              },
+            );
+
+            QuickTaskService
+                .loadTasks(); // Reload tasks to reflect newly added quick tasks.
+          } else {
+            _showAddTaskDialog();
+          }
+        },
+        backgroundColor: currentCategoryColor ??
+            Theme.of(context)
+                .primaryColor, // Fallback to default if color is null.
+        child: Icon(
+          isQuickAddMode ? Icons.add : Icons.add_task,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
   Widget _buildTaskTabs() {
     final upcomingTasks = _getTasksForSelectedDate();
     final overdueTasks = _getOverdueTasks();
@@ -901,50 +1177,140 @@ class _TodoListState extends State<TodoList> {
     }
   }
 
-// Update the _buildTaskList method
   Widget _buildTaskList() {
     if (isLoading) {
-      return Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
-    // Get and store current tasks
-    _currentTasks =
-        showMyTasksOnly ? _getOverdueTasks() : _getTasksForSelectedDate();
+    if (isQuickAddMode) {
+      return FutureBuilder<List<QuickTask>>(
+        future: QuickTaskService.loadTasks(),
+        initialData: _quickTasks, // Use cached data initially
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              _quickTasks.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-    if (_currentTasks.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.task_alt, size: 56, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              showMyTasksOnly
-                  ? 'No overdue tasks'
-                  : 'No tasks for ${DateFormat('MMMM d').format(selectedDate)}',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
+          final quickTasks = snapshot.data ?? [];
+
+          // Update cached tasks when new data arrives
+          if (snapshot.hasData && snapshot.data != _quickTasks) {
+            _quickTasks = snapshot.data!;
+          }
+
+          if (quickTasks.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.task_alt, size: 56, color: Colors.grey[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No quick tasks added yet',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
+            );
+          }
+
+          return ListView.builder(
+            key: ValueKey(
+                'quick-tasks-${DateTime.now().millisecondsSinceEpoch}'),
+            shrinkWrap: true,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            itemCount: quickTasks.length,
+            itemBuilder: (context, index) {
+              final task = quickTasks[index];
+              return _buildQuickTaskItem(task, context);
+            },
+          );
+        },
+      );
+    } else {
+      // Handle regular tasks
+      _currentTasks =
+          showMyTasksOnly ? _getOverdueTasks() : _getTasksForSelectedDate();
+
+      if (_currentTasks.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.task_alt, size: 56, color: Colors.grey[300]),
+              const SizedBox(height: 16),
+              Text(
+                showMyTasksOnly
+                    ? 'No overdue tasks'
+                    : 'No tasks for ${DateFormat('MMMM d').format(selectedDate)}',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return ListView.builder(
+        key: ValueKey('regular-tasks-${DateTime.now().millisecondsSinceEpoch}'),
+        shrinkWrap: true,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: _currentTasks.length,
+        itemBuilder: (context, index) {
+          final todo = _currentTasks[index];
+          final isOverdue = _isTaskOverdue(todo);
+          return _buildTaskItem(todo, isOverdue);
+        },
       );
     }
+  }
 
-    return ListView.builder(
-      key: ValueKey(DateTime.now().millisecondsSinceEpoch), // Force rebuild
-      shrinkWrap: true,
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: _currentTasks.length,
-      itemBuilder: (context, index) {
-        final todo = _currentTasks[index];
-        final isOverdue = _isTaskOverdue(todo);
-        return _buildTaskItem(todo, isOverdue);
-      },
-    );
+  List<Widget> _buildSubtasks(QuickTask task) {
+    if (task.subtasks.isEmpty) {
+      return [];
+    }
+
+    return [
+      const Divider(height: 1),
+      ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: task.subtasks.length,
+        itemBuilder: (context, index) {
+          final subtask = task.subtasks[index];
+          return ListTile(
+            dense: true,
+            leading: Checkbox(
+              value: subtask.isCompleted,
+              onChanged: (bool? value) async {
+                setState(() {
+                  subtask.isCompleted = value ?? false;
+                });
+                await QuickTaskService.updateTask(task);
+              },
+            ),
+            title: Text(
+              subtask.title,
+              style: TextStyle(
+                decoration:
+                    subtask.isCompleted ? TextDecoration.lineThrough : null,
+                color: subtask.isCompleted ? Colors.grey : Colors.black87,
+              ),
+            ),
+          );
+        },
+      ),
+    ];
   }
 
   Future<void> _showRescheduleDialog(
@@ -1346,113 +1712,6 @@ class _TodoListState extends State<TodoList> {
         ),
       ],
     );
-  }
-
-  QuickTask _convertQuickTaskToTodoItem(QuickTask quickTask) {
-    return QuickTask(
-      id: quickTask.id,
-      title: quickTask.title,
-      createdAt: quickTask.createdAt,
-      subtasks: quickTask.subtasks,
-      // Add any additional TodoItem fields with default values
-      isCompleted: false,
-      // Add other required fields based on your TodoItem class structure
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    // Add this conversion method to your class
-    TodoItem _convertQuickTaskToTodoItem(QuickTask quickTask) {
-      return TodoItem(
-        id: quickTask.id,
-        title: quickTask.title,
-        description: '', // QuickTask doesn't have description
-        createdAt: quickTask.createdAt,
-        dueDate:
-            DateTime.now().add(const Duration(days: 1)), // Default to tomorrow
-        subtasks: quickTask.subtasks, // SubTask class is the same for both
-        isCompleted: quickTask.isCompleted,
-        completedAt: quickTask.completedAt,
-        isQuickTask: true, // Mark as a quick task
-      );
-    }
-
-    Widget mainContent;
-    if (isQuickAddMode) {
-      mainContent = QuickAddTaskSheet(
-        onTaskAdded: (QuickTask quickTask) {
-          setState(() {
-            // Convert QuickTask to TodoItem before adding
-            final todoItem = _convertQuickTaskToTodoItem(quickTask);
-            todos.add(todoItem);
-            isQuickAddMode = false;
-          });
-        },
-      );
-    } else {
-      mainContent = _buildTaskList();
-    }
-
-    return Scaffold(
-        backgroundColor: Colors.grey[100],
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(
-              Icons.account_circle,
-              color: currentCategoryColor,
-              size: 45,
-            ),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ProfilePage(todos: todos),
-                ),
-              );
-            },
-          ),
-        ),
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildMonthYearSelector(),
-              _buildCalendar(),
-              _buildTaskTabs(),
-              Expanded(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(30),
-                    ),
-                  ),
-                  child: mainContent,
-                ),
-              ),
-            ],
-          ),
-        ),
-        floatingActionButton: isQuickAddMode
-            ? FloatingActionButton(
-                onPressed: () => setState(() => isQuickAddMode = true),
-                backgroundColor: currentCategoryColor,
-                child: const Icon(Icons.add, color: Colors.white),
-              )
-            : FloatingActionButton(
-                onPressed: _showAddTaskDialog, // Call the add task dialog
-                backgroundColor: currentCategoryColor,
-                child: const Icon(Icons.add_task, color: Colors.white),
-              ));
   }
 
   void _showAddTaskDialog() {
@@ -2093,6 +2352,207 @@ class _TodoListState extends State<TodoList> {
   }
 }
 
+void showQuickAddTaskSheet(
+    BuildContext context, Function(QuickTask) onTaskAdded) {
+  final taskTitleController = TextEditingController();
+  final subtaskController = TextEditingController();
+  final List<QuickSubTask> subtasks = [];
+  bool isLoading = false;
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (BuildContext context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Add Quick Task',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: taskTitleController,
+                    decoration: InputDecoration(
+                      hintText: 'Task title',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: subtaskController,
+                          decoration: InputDecoration(
+                            hintText: 'Add subtask',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[50],
+                          ),
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle),
+                        onPressed: () {
+                          if (subtaskController.text.trim().isNotEmpty) {
+                            setState(() {
+                              subtasks.add(
+                                QuickSubTask(
+                                  id: DateTime.now()
+                                      .millisecondsSinceEpoch
+                                      .toString(),
+                                  title: subtaskController.text.trim(),
+                                ),
+                              );
+                              subtaskController.clear();
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (subtasks.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Subtasks:',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 10),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: subtasks.length,
+                      itemBuilder: (context, index) {
+                        final subtask = subtasks[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(subtask.title),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.remove_circle_outline),
+                            onPressed: () {
+                              setState(() {
+                                subtasks.removeAt(index);
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: isLoading
+                          ? null
+                          : () async {
+                              if (taskTitleController.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Please enter a task title'),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setState(() {
+                                isLoading = true;
+                              });
+
+                              try {
+                                final newTask = QuickTask(
+                                  id: DateTime.now()
+                                      .millisecondsSinceEpoch
+                                      .toString(),
+                                  title: taskTitleController.text.trim(),
+                                  createdAt: DateTime.now(),
+                                  subtasks: List.from(subtasks),
+                                );
+
+                                await QuickTaskService.addTask(newTask);
+
+                                // Call the callback to update the parent widget
+                                onTaskAdded(newTask);
+
+                                Navigator.pop(context);
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'Failed to add task. Please try again.'),
+                                  ),
+                                );
+                              } finally {
+                                setState(() {
+                                  isLoading = false;
+                                });
+                              }
+                            },
+                      child: isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text('Add Task'),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
 class MonthYearSelector extends StatefulWidget {
   final Function(DateTime) onDateSelected;
   final DateTime initialDate;
@@ -2221,152 +2681,5 @@ class _MonthYearSelectorState extends State<MonthYearSelector> {
         ],
       ),
     );
-  }
-}
-
-class QuickAddTaskSheet extends StatefulWidget {
-  final Function(QuickTask) onTaskAdded;
-
-  const QuickAddTaskSheet({
-    Key? key,
-    required this.onTaskAdded,
-  }) : super(key: key);
-
-  @override
-  _QuickAddTaskSheetState createState() => _QuickAddTaskSheetState();
-}
-
-class _QuickAddTaskSheetState extends State<QuickAddTaskSheet> {
-  final TextEditingController _titleController = TextEditingController();
-  final List<TextEditingController> _subtaskControllers = [
-    TextEditingController()
-  ];
-  final _formKey = GlobalKey<FormState>();
-
-  void _addSubtaskField() {
-    setState(() {
-      _subtaskControllers.add(TextEditingController());
-    });
-  }
-
-  void _removeSubtaskField(int index) {
-    setState(() {
-      _subtaskControllers[index].dispose();
-      _subtaskControllers.removeAt(index);
-    });
-  }
-
-  void _saveTask() {
-    if (!_formKey.currentState!.validate()) return;
-
-    // Create subtasks using SubTask instead of QuickSubTask
-    final subtasks = _subtaskControllers
-        .where((controller) => controller.text.isNotEmpty)
-        .map((controller) => SubTask(
-              id: DateTime.now().millisecondsSinceEpoch.toString(),
-              title: controller.text,
-              isCompleted: false,
-            ))
-        .toList();
-
-    final task = QuickTask(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      title: _titleController.text,
-      createdAt: DateTime.now(),
-      subtasks: subtasks, // Now this matches the expected type List<SubTask>
-    );
-
-    widget.onTaskAdded(task);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Quick Add Task',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                labelText: 'Task Title',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              validator: (value) {
-                if (value?.isEmpty ?? true) {
-                  return 'Please enter a task title';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _subtaskControllers.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _subtaskControllers[index],
-                          decoration: InputDecoration(
-                            labelText: 'Subtask ${index + 1}',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (_subtaskControllers.length > 1)
-                        IconButton(
-                          icon: const Icon(Icons.remove_circle_outline),
-                          onPressed: () => _removeSubtaskField(index),
-                          color: Colors.red,
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TextButton.icon(
-                  onPressed: _addSubtaskField,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Subtask'),
-                ),
-                ElevatedButton(
-                  onPressed: _saveTask,
-                  child: const Text('Save Task'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    for (var controller in _subtaskControllers) {
-      controller.dispose();
-    }
-    super.dispose();
   }
 }

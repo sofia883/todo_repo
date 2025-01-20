@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:to_do_app/data/todo_notification_service.dart';
 
@@ -304,18 +306,6 @@ class TodoStorage {
     }
   }
 
-  // Future<void> updateTodo(TodoItem todo) async {
-  //   final todos = await _loadTodos();
-  //   final index = todos.indexWhere((t) => t.id == todo.id);
-  //   if (index != -1) {
-  //     todos[index] = todo;
-  //     await _saveTodos(todos);
-  //   } else {
-  //     throw Exception('Todo not found');
-  //   }
-  //   await _notificationService.scheduleTodoNotification(todo);
-  // }
-
   Future<void> updateTodoDate(
       String todoId, DateTime newDate, TimeOfDay? newTime) async {
     final todos = await _loadTodos();
@@ -335,70 +325,6 @@ class TodoStorage {
       await _saveTodos(todos);
     }
   }
-}
-
-class QuickTask {
-  String id;
-  String title;
-  List<SubTask> subtasks;
-  DateTime createdAt;
-  DateTime? completedAt;
-  bool isCompleted;
-
-  QuickTask({
-    required this.id,
-    required this.title,
-    required this.subtasks,
-    required this.createdAt,
-    this.completedAt,
-    this.isCompleted = false,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'subtasks': subtasks.map((st) => st.toJson()).toList(),
-        'createdAt': createdAt.toIso8601String(),
-        'completedAt': completedAt?.toIso8601String(),
-        'isCompleted': isCompleted,
-      };
-
-  factory QuickTask.fromJson(Map<String, dynamic> json) => QuickTask(
-        id: json['id'],
-        title: json['title'],
-        subtasks: (json['subtasks'] as List)
-            .map((st) => SubTask.fromJson(st))
-            .toList(),
-        createdAt: DateTime.parse(json['createdAt']),
-        completedAt: json['completedAt'] != null
-            ? DateTime.parse(json['completedAt'])
-            : null,
-        isCompleted: json['isCompleted'],
-      );
-}
-
-class QuickSubTask {
-  String id;
-  String title;
-  bool isCompleted;
-
-  QuickSubTask({
-    required this.id,
-    required this.title,
-    this.isCompleted = false,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'isCompleted': isCompleted,
-      };
-
-  factory QuickSubTask.fromJson(Map<String, dynamic> json) => QuickSubTask(
-        id: json['id'],
-        title: json['title'],
-        isCompleted: json['isCompleted'],
-      );
 }
 
 class SubTask {
@@ -435,109 +361,355 @@ class SubTask {
   }
 }
 
-class QuickTaskStorage {
-  static const String _quickTasksKey = 'quick_tasks';
-  final _quickTaskStreamController =
-      StreamController<List<QuickTask>>.broadcast();
+// Rename to QuickSubTask for consistency
+class QuickSubTask {
+  final String id;
+  final String title;
+  bool isCompleted;
 
-  // Get stream of quick tasks
-  Stream<List<QuickTask>> getQuickTasksStream() {
-    _loadQuickTasks(); // Load initial data
-    return _quickTaskStreamController.stream;
+  QuickSubTask({
+    required this.id,
+    required this.title,
+    this.isCompleted = false,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'isCompleted': isCompleted,
+    };
   }
 
-  // Load quick tasks from SharedPreferences
-  Future<List<QuickTask>> _loadQuickTasks() async {
+  factory QuickSubTask.fromJson(Map<String, dynamic> json) {
+    return QuickSubTask(
+      id: json['id'],
+      title: json['title'],
+      isCompleted: json['isCompleted'] ?? false,
+    );
+  }
+
+  QuickSubTask copyWith({
+    String? id,
+    String? title,
+    bool? isCompleted,
+  }) {
+    return QuickSubTask(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      isCompleted: isCompleted ?? this.isCompleted,
+    );
+  }
+}
+
+class QuickTask {
+  final String id;
+  final String title;
+  final DateTime createdAt;
+  final List<QuickSubTask> subtasks; // Updated to QuickSubTask
+  bool? isCompleted;
+
+  QuickTask({
+    required this.id,
+    required this.title,
+    required this.createdAt,
+    required this.subtasks,
+    this.isCompleted = false,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'createdAt': createdAt.toIso8601String(),
+      'subtasks': subtasks.map((subtask) => subtask.toJson()).toList(),
+      'isCompleted': isCompleted,
+    };
+  }
+
+  factory QuickTask.fromJson(Map<String, dynamic> json) {
+    return QuickTask(
+      id: json['id'],
+      title: json['title'],
+      createdAt: DateTime.parse(json['createdAt']),
+      subtasks: (json['subtasks'] as List)
+          .map((subtask) => QuickSubTask.fromJson(subtask))
+          .toList(),
+      isCompleted: json['isCompleted'],
+    );
+  }
+
+  QuickTask copyWith({
+    String? id,
+    String? title,
+    DateTime? createdAt,
+    List<QuickSubTask>? subtasks,
+    bool? isCompleted,
+  }) {
+    return QuickTask(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      createdAt: createdAt ?? this.createdAt,
+      subtasks: subtasks ?? this.subtasks,
+      isCompleted: isCompleted ?? this.isCompleted,
+    );
+  }
+}
+
+class QuickTaskService {
+  static const String _storageKey = 'quick_tasks';
+
+  static final QuickTaskService _instance = QuickTaskService._internal();
+  factory QuickTaskService() => _instance;
+  QuickTaskService._internal();
+
+  static final _taskController = StreamController<List<QuickTask>>.broadcast();
+  Stream<List<QuickTask>> get tasksStream => _taskController.stream;
+
+  static Future<List<QuickTask>> loadTasks() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? tasksJson = prefs.getString(_quickTasksKey);
+    final tasksString = prefs.getString(_storageKey);
+    if (tasksString == null) return [];
 
-    if (tasksJson != null) {
-      final List<dynamic> decoded = jsonDecode(tasksJson);
-      final tasks = decoded.map((item) => QuickTask.fromJson(item)).toList();
-      _quickTaskStreamController.add(tasks);
-      return tasks;
-    }
-
-    _quickTaskStreamController.add([]);
-    return [];
+    final tasksList = jsonDecode(tasksString) as List;
+    return tasksList.map((json) => QuickTask.fromJson(json)).toList();
   }
 
-  // Save quick tasks to SharedPreferences
-  Future<void> _saveQuickTasks(List<QuickTask> tasks) async {
+  static Future<void> _saveTasks(List<QuickTask> tasks) async {
     final prefs = await SharedPreferences.getInstance();
-    final encodedTasks =
-        jsonEncode(tasks.map((task) => task.toJson()).toList());
-    await prefs.setString(_quickTasksKey, encodedTasks);
-    _quickTaskStreamController.add(tasks);
+    final tasksJson = tasks.map((task) => task.toJson()).toList();
+    await prefs.setString(_storageKey, jsonEncode(tasksJson));
+    _taskController.add(tasks);
   }
 
-  // Add a new quick task
-  Future<void> addQuickTask(QuickTask task) async {
-    final tasks = await _loadQuickTasks();
-    tasks.add(task);
-    await _saveQuickTasks(tasks);
-  }
-
-  // Update an existing quick task
-  Future<void> updateQuickTask(QuickTask task) async {
-    final tasks = await _loadQuickTasks();
-    final index = tasks.indexWhere((t) => t.id == task.id);
-    if (index != -1) {
-      tasks[index] = task;
-      await _saveQuickTasks(tasks);
-    } else {
-      throw Exception('Quick task not found');
-    }
-  }
-
-  // Delete a quick task
-  Future<void> deleteQuickTask(String taskId) async {
-    final tasks = await _loadQuickTasks();
-    tasks.removeWhere((task) => task.id == taskId);
-    await _saveQuickTasks(tasks);
-  }
-
-  // Update quick task completion status
-  Future<void> updateQuickTaskStatus(String taskId, bool isCompleted) async {
-    final tasks = await _loadQuickTasks();
-    final index = tasks.indexWhere((task) => task.id == taskId);
-    if (index != -1) {
-      tasks[index].isCompleted = isCompleted;
-      tasks[index].completedAt = isCompleted ? DateTime.now() : null;
-      await _saveQuickTasks(tasks);
-    }
-  }
-
-  // Update subtask completion status
-  Future<void> updateSubtaskStatus(
-      String taskId, String subtaskId, bool isCompleted) async {
-    final tasks = await _loadQuickTasks();
+  static Future<void> updateTaskCompletion(
+      String taskId, bool isCompleted) async {
+    final tasks = await loadTasks();
     final taskIndex = tasks.indexWhere((task) => task.id == taskId);
+
     if (taskIndex != -1) {
-      final subtaskIndex = tasks[taskIndex]
-          .subtasks
-          .indexWhere((subtask) => subtask.id == subtaskId);
-      if (subtaskIndex != -1) {
-        tasks[taskIndex].subtasks[subtaskIndex].isCompleted = isCompleted;
-        await _saveQuickTasks(tasks);
-      }
+      tasks[taskIndex] = tasks[taskIndex].copyWith(
+        isCompleted: isCompleted,
+        subtasks: tasks[taskIndex]
+            .subtasks
+            .map((subtask) => subtask.copyWith(isCompleted: isCompleted))
+            .toList(),
+      );
+
+      await _saveTasks(tasks);
     }
   }
 
-  // Get all completed quick tasks
-  Future<List<QuickTask>> getCompletedQuickTasks() async {
-    final tasks = await _loadQuickTasks();
-    return tasks.where((task) => task.isCompleted).toList();
+  static Future<void> updateSubtaskCompletion(
+      String taskId, String subtaskId, bool isCompleted) async {
+    final tasks = await loadTasks();
+    final taskIndex = tasks.indexWhere((task) => task.id == taskId);
+
+    if (taskIndex != -1) {
+      final task = tasks[taskIndex];
+      final updatedSubtasks = task.subtasks
+          .map((subtask) => subtask.id == subtaskId
+              ? subtask.copyWith(isCompleted: isCompleted)
+              : subtask)
+          .toList();
+
+      final allSubtasksCompleted =
+          updatedSubtasks.every((subtask) => subtask.isCompleted);
+
+      tasks[taskIndex] = task.copyWith(
+        subtasks: updatedSubtasks,
+        isCompleted: allSubtasksCompleted,
+      );
+
+      await _saveTasks(tasks);
+    }
   }
 
-  // Get all incomplete quick tasks
-  Future<List<QuickTask>> getIncompleteQuickTasks() async {
-    final tasks = await _loadQuickTasks();
-    return tasks.where((task) => !task.isCompleted).toList();
+  static Future<void> addTask(QuickTask task) async {
+    final tasks = await loadTasks();
+    tasks.add(task);
+    await _saveTasks(tasks);
   }
 
-  // Clean up resources
+  static Future<void> deleteTask(String taskId) async {
+    final tasks = await loadTasks();
+    tasks.removeWhere((task) => task.id == taskId);
+    await _saveTasks(tasks);
+  }
+
+  static Future<void> updateTask(QuickTask updatedTask) async {
+    final tasks = await loadTasks();
+    final index = tasks.indexWhere((task) => task.id == updatedTask.id);
+
+    if (index != -1) {
+      tasks[index] = updatedTask;
+      await _saveTasks(tasks);
+    }
+  }
+
   void dispose() {
-    _quickTaskStreamController.close();
+    _taskController.close();
+  }
+}
+class QuickTaskItem extends StatefulWidget {
+  final QuickTask task;
+  final VoidCallback onUpdate;
+
+  const QuickTaskItem({
+    Key? key,
+    required this.task,
+    required this.onUpdate,
+  }) : super(key: key);
+
+  @override
+  State<QuickTaskItem> createState() => _QuickTaskItemState();
+}
+
+class _QuickTaskItemState extends State<QuickTaskItem> {
+  bool isExpanded = false;
+
+  Future<void> _handleMainTaskCompletion(bool? value) async {
+    if (value == null) return;
+
+    try {
+      // Update main task and all subtasks
+      await QuickTaskService.updateTaskCompletion(widget.task.id, value);
+      widget.onUpdate();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update task')),
+      );
+    }
+  }
+
+  Future<void> _handleSubtaskCompletion(String subtaskId, bool value) async {
+    try {
+      // Update subtask and check main task completion
+      await QuickTaskService.updateSubtaskCompletion(
+        widget.task.id,
+        subtaskId,
+        value,
+      );
+      widget.onUpdate();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update subtask')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSubtasks = widget.task.subtasks.isNotEmpty;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Main task checkbox
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Checkbox(
+                    value: widget.task.isCompleted ?? false,
+                    onChanged: _handleMainTaskCompletion,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                
+                // Task title
+                Expanded(
+                  child: Text(
+                    widget.task.title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      decoration: widget.task.isCompleted ?? false
+                          ? TextDecoration.lineThrough
+                          : null,
+                      color: widget.task.isCompleted ?? false
+                          ? Theme.of(context).disabledColor
+                          : Theme.of(context).textTheme.bodyLarge?.color,
+                    ),
+                  ),
+                ),
+                
+                // Show dropdown only if has subtasks
+                if (hasSubtasks)
+                  IconButton(
+                    icon: AnimatedRotation(
+                      turns: isExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: const Icon(Icons.keyboard_arrow_down),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        isExpanded = !isExpanded;
+                      });
+                    },
+                  ),
+              ],
+            ),
+            
+            // Subtasks section
+            if (hasSubtasks && isExpanded)
+              Padding(
+                padding: const EdgeInsets.only(left: 36, top: 8),
+                child: Column(
+                  children: widget.task.subtasks.map((subtask) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: Checkbox(
+                              value: subtask.isCompleted,
+                              onChanged: (bool? value) {
+                                if (value != null) {
+                                  _handleSubtaskCompletion(subtask.id, value);
+                                }
+                              },
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              subtask.title,
+                              style: TextStyle(
+                                fontSize: 14,
+                                decoration: subtask.isCompleted
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                color: subtask.isCompleted
+                                    ? Theme.of(context).disabledColor
+                                    : Theme.of(context).textTheme.bodyMedium?.color,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
