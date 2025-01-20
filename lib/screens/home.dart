@@ -2359,6 +2359,18 @@ void showQuickAddTaskSheet(
   final List<QuickSubTask> subtasks = [];
   bool isLoading = false;
 
+  void addSubtask() {
+    if (subtaskController.text.trim().isNotEmpty) {
+      subtasks.add(
+        QuickSubTask(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: subtaskController.text.trim(),
+        ),
+      );
+      subtaskController.clear();
+    }
+  }
+
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -2383,12 +2395,15 @@ void showQuickAddTaskSheet(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Header
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         'Add Quick Task',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),
@@ -2396,13 +2411,21 @@ void showQuickAddTaskSheet(
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
+
+                  // Task Title Field
                   TextField(
                     controller: taskTitleController,
                     decoration: InputDecoration(
-                      hintText: 'Task title',
+                      hintText: 'What needs to be done?',
+                      prefixIcon: const Icon(Icons.task_alt),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
                       ),
                       filled: true,
                       fillColor: Colors.grey[50],
@@ -2410,73 +2433,97 @@ void showQuickAddTaskSheet(
                     textCapitalization: TextCapitalization.sentences,
                   ),
                   const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: subtaskController,
-                          decoration: InputDecoration(
-                            hintText: 'Add subtask',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey[50],
-                          ),
-                          textCapitalization: TextCapitalization.sentences,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle),
+
+                  // Subtask Field
+                  TextField(
+                    controller: subtaskController,
+                    decoration: InputDecoration(
+                      hintText: 'Add subtask',
+                      prefixIcon: const Icon(Icons.subdirectory_arrow_right),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.add_circle, color: Colors.blue),
                         onPressed: () {
-                          if (subtaskController.text.trim().isNotEmpty) {
-                            setState(() {
-                              subtasks.add(
-                                QuickSubTask(
-                                  id: DateTime.now()
-                                      .millisecondsSinceEpoch
-                                      .toString(),
-                                  title: subtaskController.text.trim(),
-                                ),
-                              );
-                              subtaskController.clear();
-                            });
-                          }
+                          setState(() {
+                            addSubtask();
+                          });
                         },
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  if (subtasks.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      'Subtasks:',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
                     ),
-                    const SizedBox(height: 10),
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: subtasks.length,
-                      itemBuilder: (context, index) {
-                        final subtask = subtasks[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(subtask.title),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.remove_circle_outline),
-                            onPressed: () {
-                              setState(() {
-                                subtasks.removeAt(index);
-                              });
-                            },
+                    textCapitalization: TextCapitalization.sentences,
+                    onSubmitted: (value) {
+                      setState(() {
+                        addSubtask();
+                      });
+                    },
+                  ),
+
+                  // Subtasks List
+                  if (subtasks.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Subtasks (${subtasks.length})',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
                           ),
-                        );
-                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: subtasks.length,
+                        separatorBuilder: (context, index) => Divider(
+                          height: 1,
+                          color: Colors.grey[200],
+                        ),
+                        itemBuilder: (context, index) {
+                          final subtask = subtasks[index];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(
+                              Icons.circle_outlined,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                            title: Text(
+                              subtask.title,
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                            trailing: IconButton(
+                              icon: Icon(
+                                Icons.remove_circle_outline,
+                                color: Colors.red[400],
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  subtasks.removeAt(index);
+                                });
+                              },
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ],
-                  const SizedBox(height: 20),
+
+                  // Add Task Button
+                  const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -2485,6 +2532,7 @@ void showQuickAddTaskSheet(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
+                        backgroundColor: Colors.blue,
                       ),
                       onPressed: isLoading
                           ? null
@@ -2496,6 +2544,13 @@ void showQuickAddTaskSheet(
                                   ),
                                 );
                                 return;
+                              }
+
+                              // Add any remaining subtask that hasn't been added
+                              if (subtaskController.text.trim().isNotEmpty) {
+                                setState(() {
+                                  addSubtask();
+                                });
                               }
 
                               setState(() {
@@ -2513,16 +2568,14 @@ void showQuickAddTaskSheet(
                                 );
 
                                 await QuickTaskService.addTask(newTask);
-
-                                // Call the callback to update the parent widget
                                 onTaskAdded(newTask);
-
                                 Navigator.pop(context);
                               } catch (e) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text(
                                         'Failed to add task. Please try again.'),
+                                    backgroundColor: Colors.red,
                                   ),
                                 );
                               } finally {
@@ -2537,12 +2590,20 @@ void showQuickAddTaskSheet(
                               width: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
-                          : const Text('Add Task'),
+                          : const Text(
+                              'Add Task',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
                     ),
                   ),
-                  const SizedBox(height: 20),
                 ],
               ),
             ),

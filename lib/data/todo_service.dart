@@ -401,12 +401,11 @@ class QuickSubTask {
     );
   }
 }
-
 class QuickTask {
   final String id;
   final String title;
   final DateTime createdAt;
-  final List<QuickSubTask> subtasks; // Updated to QuickSubTask
+  final List<QuickSubTask> subtasks;
   bool? isCompleted;
 
   QuickTask({
@@ -414,7 +413,7 @@ class QuickTask {
     required this.title,
     required this.createdAt,
     required this.subtasks,
-    this.isCompleted = false,
+    this.isCompleted,
   });
 
   Map<String, dynamic> toJson() {
