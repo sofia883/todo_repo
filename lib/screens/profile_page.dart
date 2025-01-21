@@ -15,7 +15,6 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final TodoStorage _todoStorage = TodoStorage();
   File? _profileImage;
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _nameController =
@@ -108,7 +107,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       backgroundColor: Color(0xFFF5F7FF),
       body: StreamBuilder<List<TodoItem>>(
-        stream: _todoStorage.getTodosStream(),
+        stream: FirebaseTaskService.getScheduledTasksStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());

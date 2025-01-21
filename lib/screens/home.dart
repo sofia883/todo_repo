@@ -36,7 +36,7 @@ class _TodoListState extends State<TodoList> {
   List<QuickTask> _quickTasks = [];
 
   StreamSubscription? _todoSubscription; // Add this
-  final TodoStorage _todoStorage = TodoStorage();
+
   List<TodoItem> _currentTasks = [];
   bool isQuickAddMode = false;
 // Update the timer check method
@@ -115,7 +115,7 @@ class _TodoListState extends State<TodoList> {
   void initState() {
     super.initState();
     _notificationService.initialize();
-    QuickTaskService.loadTasks();
+    FirebaseTaskService.getQuickTasksStream();
     // _startOverdueTimer();
     selectedDate = DateTime.now();
     displayedMonth = DateTime.now();
@@ -418,7 +418,7 @@ class _TodoListState extends State<TodoList> {
       final deletedTodo = todo;
 
       try {
-        await _todoStorage.deleteTodo(todo.id);
+        await FirebaseTaskService.deleteScheduledTask(todo.id);
 
         if (!context.mounted) return;
 
@@ -433,7 +433,7 @@ class _TodoListState extends State<TodoList> {
                     todos.add(deletedTodo);
                   });
 
-                  await _todoStorage.addTodo(deletedTodo);
+                  await FirebaseTaskService.addScheduledTask(deletedTodo);
 
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -496,7 +496,7 @@ class _TodoListState extends State<TodoList> {
       });
 
       try {
-        await _todoStorage.updateTodo(todo);
+        await FirebaseTaskService.updateScheduledTask(todo);
 
         // Show success snackbar
         if (!context.mounted) return;
@@ -570,21 +570,9 @@ class _TodoListState extends State<TodoList> {
             }
             return false;
           },
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: isOverdue
-                      ? Colors.red.withOpacity(0.08)
-                      : currentCategoryColor.withOpacity(0.08),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
+          child: Card(
+            color: Colors.white,
+            elevation: 3.0,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -733,11 +721,13 @@ class _TodoListState extends State<TodoList> {
                                     });
                                     updateMainTaskStatus(setState);
                                     try {
-                                      await _todoStorage.updateTodo(todo);
+                                      await FirebaseTaskService
+                                          .updateScheduledTask(todo);
                                     } catch (e) {
                                       // Handle error
                                     }
                                   },
+                                  shape: const CircleBorder(),
                                   activeColor: currentCategoryColor,
                                 ),
                               ),
@@ -771,6 +761,62 @@ class _TodoListState extends State<TodoList> {
   }
 
   Widget _buildQuickTaskItem(QuickTask task, BuildContext context) {
+    String formatCreationTime(DateTime dateTime) {
+      return 'Created at ${DateFormat('h:mm a').format(dateTime).toLowerCase()}';
+    }
+
+    Future<bool?> _showCompletionDialog(bool isCurrentlyCompleted) async {
+      return await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          title: Text(
+            isCurrentlyCompleted
+                ? 'Mark Task as Incomplete?'
+                : 'Complete Task?',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isCurrentlyCompleted
+                    ? 'Are you sure you want to mark this task as incomplete?'
+                    : 'Are you sure you want to mark this task as complete?',
+              ),
+              const SizedBox(height: 12),
+              Text(task.title),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Text(
+                isCurrentlyCompleted ? 'Mark Incomplete' : 'Complete',
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return StatefulBuilder(
       builder: (context, setState) {
         return Dismissible(
@@ -809,7 +855,7 @@ class _TodoListState extends State<TodoList> {
           },
           onDismissed: (direction) async {
             try {
-              await QuickTaskService.deleteTask(task.id);
+              await FirebaseTaskService.deleteQuickTask(task.id);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Task deleted'),
@@ -817,7 +863,7 @@ class _TodoListState extends State<TodoList> {
                     label: 'UNDO',
                     onPressed: () async {
                       try {
-                        await QuickTaskService.addTask(task);
+                        await FirebaseTaskService.addQuickTask(task);
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Task restored'),
@@ -846,74 +892,160 @@ class _TodoListState extends State<TodoList> {
             }
           },
           child: Card(
-            elevation: 0,
+            color: Colors.white,
+            elevation: 3.0,
             margin: const EdgeInsets.only(bottom: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
               side: BorderSide(color: Colors.grey[200]!),
             ),
             child: Theme(
-              data:
-                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+                checkboxTheme: CheckboxThemeData(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  fillColor: MaterialStateProperty.resolveWith<Color>((states) {
+                    if (states.contains(MaterialState.selected)) {
+                      return Theme.of(context).primaryColor;
+                    }
+                    return Colors.transparent;
+                  }),
+                  side: BorderSide(
+                    color: Colors.grey[400]!,
+                    width: 2,
+                  ),
+                ),
+              ),
               child: task.subtasks.isEmpty
-                  ? ListTile(
-                      leading: Checkbox(
-                        value: task.isCompleted ?? false,
-                        onChanged: (bool? value) async {
-                          if (value == null) return;
-                          setState(() {
-                            task.isCompleted = value;
-                          });
-                          await QuickTaskService.updateTask(task);
-                        },
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                  ? Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: ListTile(
+                        leading: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: (task.isCompleted ??
+                                    false) // Safely handle null
+                                ? Colors.green.withOpacity(0.1)
+                                : Colors.indigo.withOpacity(0.1),
+                          ),
+                          child: Transform.scale(
+                            scale: 1.2,
+                            child: Checkbox(
+                              value: task.isCompleted ?? false,
+                              onChanged: (bool? value) async {
+                                if (value == null) return;
+
+                                final confirmed = await _showCompletionDialog(
+                                    task.isCompleted ?? false);
+                                if (confirmed == true) {
+                                  setState(() {
+                                    task.isCompleted = value;
+                                  });
+                                  await FirebaseTaskService.updateQuickTask(
+                                      task);
+                                }
+                              },
+                            ),
+                          ),
                         ),
-                      ),
-                      title: Text(
-                        task.title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          decoration: task.isCompleted == true
-                              ? TextDecoration.lineThrough
-                              : null,
-                          color: task.isCompleted == true
-                              ? Colors.grey
-                              : Colors.black87,
+                        title: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              task.title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                decoration: task.isCompleted == true
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                color: task.isCompleted == true
+                                    ? Colors.grey
+                                    : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(
+                                height:
+                                    4), // Spacing between title and timestamp
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time,
+                                  size: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  formatCreationTime(task.createdAt),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     )
                   : ExpansionTile(
-                      tilePadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
                       leading: Checkbox(
                         value: task.isCompleted ?? false,
                         onChanged: (bool? value) async {
                           if (value == null) return;
-                          setState(() {
-                            task.isCompleted = value;
-                            // Update all subtasks when main task is toggled
-                            for (var subtask in task.subtasks) {
-                              subtask.isCompleted = value;
-                            }
-                          });
-                          await QuickTaskService.updateTask(task);
+
+                          final confirmed = await _showCompletionDialog(
+                              task.isCompleted ?? false);
+                          if (confirmed == true) {
+                            setState(() {
+                              task.isCompleted = value;
+                              for (var subtask in task.subtasks) {
+                                subtask.isCompleted = value;
+                              }
+                            });
+                            await FirebaseTaskService.updateQuickTask(task);
+                          }
                         },
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
                       ),
-                      title: Text(
-                        task.title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          decoration: task.isCompleted == true
-                              ? TextDecoration.lineThrough
-                              : null,
-                          color: task.isCompleted == true
-                              ? Colors.grey
-                              : Colors.black87,
-                        ),
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            task.title,
+                            style: TextStyle(
+                              fontSize: 16,
+                              decoration: task.isCompleted == true
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                              color: task.isCompleted == true
+                                  ? Colors.grey
+                                  : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: 14,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                formatCreationTime(task.createdAt),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       children: task.subtasks.map((subtask) {
                         return ListTile(
@@ -923,21 +1055,16 @@ class _TodoListState extends State<TodoList> {
                             value: subtask.isCompleted,
                             onChanged: (bool? value) async {
                               if (value == null) return;
+
+                              // Removed confirmation dialog for subtasks
                               setState(() {
                                 subtask.isCompleted = value;
-
-                                // Check if all subtasks are completed
                                 bool allSubtasksCompleted =
                                     task.subtasks.every((st) => st.isCompleted);
-
-                                // Update main task status based on subtasks
                                 task.isCompleted = allSubtasksCompleted;
                               });
-                              await QuickTaskService.updateTask(task);
+                              await FirebaseTaskService.updateQuickTask(task);
                             },
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
                           ),
                           title: Text(
                             subtask.title,
@@ -1026,8 +1153,8 @@ class _TodoListState extends State<TodoList> {
               },
             );
 
-            QuickTaskService
-                .loadTasks(); // Reload tasks to reflect newly added quick tasks.
+            FirebaseTaskService
+                .getQuickTasksStream(); // Reload tasks to reflect newly added quick tasks.
           } else {
             _showAddTaskDialog();
           }
@@ -1036,7 +1163,7 @@ class _TodoListState extends State<TodoList> {
             Theme.of(context)
                 .primaryColor, // Fallback to default if color is null.
         child: Icon(
-          isQuickAddMode ? Icons.add : Icons.add_task,
+          isQuickAddMode ? Icons.add : Icons.add,
           color: Colors.white,
         ),
       ),
@@ -1154,7 +1281,7 @@ class _TodoListState extends State<TodoList> {
 
       await _todoSubscription?.cancel();
 
-      _todoSubscription = _todoStorage.getTodosStream().listen(
+      _todoSubscription = FirebaseTaskService.getScheduledTasksStream().listen(
         (updatedTodos) {
           print('Received ${updatedTodos.length} todos from stream');
           setState(() {
@@ -1183,8 +1310,8 @@ class _TodoListState extends State<TodoList> {
     }
 
     if (isQuickAddMode) {
-      return FutureBuilder<List<QuickTask>>(
-        future: QuickTaskService.loadTasks(),
+      return StreamBuilder<List<QuickTask>>(
+        stream: FirebaseTaskService.getQuickTasksStream(),
         initialData: _quickTasks, // Use cached data initially
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
@@ -1296,7 +1423,7 @@ class _TodoListState extends State<TodoList> {
                 setState(() {
                   subtask.isCompleted = value ?? false;
                 });
-                await QuickTaskService.updateTask(task);
+                await FirebaseTaskService.addQuickTask(task);
               },
             ),
             title: Text(
@@ -1474,7 +1601,8 @@ class _TodoListState extends State<TodoList> {
 
                                 try {
                                   // Update both date and time
-                                  await _todoStorage.updateTodoDate(
+                                  await FirebaseTaskService
+                                      .updateRescheduleScheduledTask(
                                     todo.id,
                                     selectedDate,
                                     selectedTime,
@@ -2243,7 +2371,8 @@ class _TodoListState extends State<TodoList> {
                                 ),
                               );
 
-                              await _todoStorage.addTodo(newTodo);
+                              await FirebaseTaskService.addScheduledTask(
+                                  newTodo);
 
                               // Close loading indicator
                               Navigator.of(context).pop();
@@ -2567,7 +2696,7 @@ void showQuickAddTaskSheet(
                                   subtasks: List.from(subtasks),
                                 );
 
-                                await QuickTaskService.addTask(newTask);
+                                await FirebaseTaskService.addQuickTask(newTask);
                                 onTaskAdded(newTask);
                                 Navigator.pop(context);
                               } catch (e) {

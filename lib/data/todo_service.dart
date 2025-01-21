@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:to_do_app/data/todo_notification_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+  // Stream<User?> get authStateChanges => _auth.authStateChanges();
 
 class TodoListData {
   String title;
@@ -110,223 +115,6 @@ class TodoItem {
   }
 }
 
-class TodoStorage {
-  static const String _todosKey = 'todos';
-  final _todoStreamController = StreamController<List<TodoItem>>.broadcast();
-  final NotificationService _notificationService = NotificationService();
-
-  static const String _deletedTodosKey = 'deleted_todos';
-
-  // Existing methods...
-  Future<void> checkOverdueTasks() async {
-    final todos = await _loadTodos();
-    final now = DateTime.now();
-
-    for (final todo in todos) {
-      if (!todo.isCompleted) {
-        DateTime dueDateTime;
-        if (todo.dueTime != null) {
-          dueDateTime = DateTime(
-            todo.dueDate.year,
-            todo.dueDate.month,
-            todo.dueDate.day,
-            todo.dueTime!.hour,
-            todo.dueTime!.minute,
-          );
-        } else {
-          dueDateTime = DateTime(
-            todo.dueDate.year,
-            todo.dueDate.month,
-            todo.dueDate.day,
-            23, // End of day
-            59,
-          );
-        }
-
-        if (dueDateTime.isBefore(now) && !todo.isOverdue) {
-          todo.isOverdue = true;
-        }
-      }
-    }
-
-    await _saveTodos(todos);
-  }
-
-  // Delete todo with backup
-  Future<void> deleteTodo(String todoId) async {
-    final todos = await _loadTodos();
-    final deletedTodo = todos.firstWhere((todo) => todo.id == todoId);
-
-    // Store the deleted todo
-    final prefs = await SharedPreferences.getInstance();
-    final deletedTodos = await _loadDeletedTodos();
-    deletedTodos[todoId] = {
-      'todo': deletedTodo.toJson(),
-      'deletedAt': DateTime.now().toIso8601String(),
-    };
-    await prefs.setString(_deletedTodosKey, jsonEncode(deletedTodos));
-
-    // Remove from active todos
-    todos.removeWhere((todo) => todo.id == todoId);
-    await _saveTodos(todos);
-    await _notificationService.cancelTodoNotifications(todoId);
-  }
-
-  // Restore deleted todo
-  Future<void> restoreTodo(TodoItem todo) async {
-    try {
-      // Load current todos
-      final todos = await _loadTodos();
-
-      // Add the todo back to the list
-      todos.add(todo);
-
-      // Save the updated list
-      await _saveTodos(todos);
-
-      // Remove from deleted todos backup
-      final prefs = await SharedPreferences.getInstance();
-      final deletedTodos = await _loadDeletedTodos();
-      deletedTodos.remove(todo.id);
-      await prefs.setString(_deletedTodosKey, jsonEncode(deletedTodos));
-    } catch (e) {
-      print('Error restoring todo: $e');
-      throw Exception('Failed to restore todo: ${e.toString()}');
-    }
-  }
-
-  // Load deleted todos from SharedPreferences
-  Future<Map<String, dynamic>> _loadDeletedTodos() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? deletedTodosJson = prefs.getString(_deletedTodosKey);
-
-    if (deletedTodosJson != null) {
-      return jsonDecode(deletedTodosJson);
-    }
-    return {};
-  }
-
-  // Clean up old deleted todos
-  Future<void> cleanupDeletedTodos() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final deletedTodos = await _loadDeletedTodos();
-      final now = DateTime.now();
-
-      // Remove todos older than 24 hours
-      deletedTodos.removeWhere((todoId, data) {
-        final deletedAt = DateTime.parse(data['deletedAt']);
-        return now.difference(deletedAt).inHours > 24;
-      });
-
-      await prefs.setString(_deletedTodosKey, jsonEncode(deletedTodos));
-    } catch (e) {
-      print('Error cleaning up deleted todos: $e');
-    }
-  }
-
-  // Get all deleted todos that can still be restored
-  Future<List<TodoItem>> getDeletedTodos() async {
-    final deletedTodos = await _loadDeletedTodos();
-    final now = DateTime.now();
-
-    return deletedTodos.entries
-        .where((entry) {
-          final deletedAt = DateTime.parse(entry.value['deletedAt']);
-          return now.difference(deletedAt).inHours <= 24;
-        })
-        .map((entry) => TodoItem.fromJson(entry.value['todo']))
-        .toList();
-  }
-
-  // Clean up resources
-  void dispose() {
-    _todoStreamController.close();
-  }
-
-  // Get todos stream
-  Stream<List<TodoItem>> getTodosStream() {
-    _loadTodos(); // Load initial data
-    return _todoStreamController.stream;
-  }
-
-  // Load todos from SharedPreferences
-  Future<List<TodoItem>> _loadTodos() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? todosJson = prefs.getString(_todosKey);
-
-    if (todosJson != null) {
-      final List<dynamic> decoded = jsonDecode(todosJson);
-      final todos = decoded.map((item) => TodoItem.fromJson(item)).toList();
-      _todoStreamController.add(todos);
-
-      return todos;
-    }
-
-    _todoStreamController.add([]);
-    return [];
-  }
-
-  // Save todos to SharedPreferences
-  Future<void> _saveTodos(List<TodoItem> todos) async {
-    final prefs = await SharedPreferences.getInstance();
-    final encodedTodos =
-        jsonEncode(todos.map((todo) => todo.toJson()).toList());
-    await prefs.setString(_todosKey, encodedTodos);
-    _todoStreamController.add(todos);
-  }
-
-  Future<void> addTodo(TodoItem todo) async {
-    final todos = await _loadTodos();
-    todos.add(todo);
-    await _saveTodos(todos);
-
-    // Schedule notification
-  }
-
-  Future<void> updateTodo(TodoItem todo) async {
-    final todos = await _loadTodos();
-    final index = todos.indexWhere((t) => t.id == todo.id);
-    if (index != -1) {
-      todos[index] = todo;
-      await _saveTodos(todos);
-
-      // Update notification
-    }
-  }
-
-  // Update todo status
-  Future<void> updateTodoStatus(String todoId, bool isCompleted) async {
-    final todos = await _loadTodos();
-    final index = todos.indexWhere((todo) => todo.id == todoId);
-    if (index != -1) {
-      todos[index].isCompleted = isCompleted;
-      todos[index].completedAt = isCompleted ? DateTime.now() : null;
-      await _saveTodos(todos);
-    }
-  }
-
-  Future<void> updateTodoDate(
-      String todoId, DateTime newDate, TimeOfDay? newTime) async {
-    final todos = await _loadTodos();
-    final index = todos.indexWhere((todo) => todo.id == todoId);
-    if (index != -1) {
-      final updatedTodo = TodoItem(
-        id: todos[index].id,
-        title: todos[index].title,
-        description: todos[index].description,
-        createdAt: todos[index].createdAt,
-        dueDate: newDate,
-        dueTime: newTime, // Update with the new time
-        isCompleted: todos[index].isCompleted,
-        completedAt: todos[index].completedAt,
-      );
-      todos[index] = updatedTodo;
-      await _saveTodos(todos);
-    }
-  }
-}
-
 class SubTask {
   final String id;
   final String title;
@@ -401,6 +189,7 @@ class QuickSubTask {
     );
   }
 }
+
 class QuickTask {
   final String id;
   final String title;
@@ -455,101 +244,6 @@ class QuickTask {
   }
 }
 
-class QuickTaskService {
-  static const String _storageKey = 'quick_tasks';
-
-  static final QuickTaskService _instance = QuickTaskService._internal();
-  factory QuickTaskService() => _instance;
-  QuickTaskService._internal();
-
-  static final _taskController = StreamController<List<QuickTask>>.broadcast();
-  Stream<List<QuickTask>> get tasksStream => _taskController.stream;
-
-  static Future<List<QuickTask>> loadTasks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final tasksString = prefs.getString(_storageKey);
-    if (tasksString == null) return [];
-
-    final tasksList = jsonDecode(tasksString) as List;
-    return tasksList.map((json) => QuickTask.fromJson(json)).toList();
-  }
-
-  static Future<void> _saveTasks(List<QuickTask> tasks) async {
-    final prefs = await SharedPreferences.getInstance();
-    final tasksJson = tasks.map((task) => task.toJson()).toList();
-    await prefs.setString(_storageKey, jsonEncode(tasksJson));
-    _taskController.add(tasks);
-  }
-
-  static Future<void> updateTaskCompletion(
-      String taskId, bool isCompleted) async {
-    final tasks = await loadTasks();
-    final taskIndex = tasks.indexWhere((task) => task.id == taskId);
-
-    if (taskIndex != -1) {
-      tasks[taskIndex] = tasks[taskIndex].copyWith(
-        isCompleted: isCompleted,
-        subtasks: tasks[taskIndex]
-            .subtasks
-            .map((subtask) => subtask.copyWith(isCompleted: isCompleted))
-            .toList(),
-      );
-
-      await _saveTasks(tasks);
-    }
-  }
-
-  static Future<void> updateSubtaskCompletion(
-      String taskId, String subtaskId, bool isCompleted) async {
-    final tasks = await loadTasks();
-    final taskIndex = tasks.indexWhere((task) => task.id == taskId);
-
-    if (taskIndex != -1) {
-      final task = tasks[taskIndex];
-      final updatedSubtasks = task.subtasks
-          .map((subtask) => subtask.id == subtaskId
-              ? subtask.copyWith(isCompleted: isCompleted)
-              : subtask)
-          .toList();
-
-      final allSubtasksCompleted =
-          updatedSubtasks.every((subtask) => subtask.isCompleted);
-
-      tasks[taskIndex] = task.copyWith(
-        subtasks: updatedSubtasks,
-        isCompleted: allSubtasksCompleted,
-      );
-
-      await _saveTasks(tasks);
-    }
-  }
-
-  static Future<void> addTask(QuickTask task) async {
-    final tasks = await loadTasks();
-    tasks.add(task);
-    await _saveTasks(tasks);
-  }
-
-  static Future<void> deleteTask(String taskId) async {
-    final tasks = await loadTasks();
-    tasks.removeWhere((task) => task.id == taskId);
-    await _saveTasks(tasks);
-  }
-
-  static Future<void> updateTask(QuickTask updatedTask) async {
-    final tasks = await loadTasks();
-    final index = tasks.indexWhere((task) => task.id == updatedTask.id);
-
-    if (index != -1) {
-      tasks[index] = updatedTask;
-      await _saveTasks(tasks);
-    }
-  }
-
-  void dispose() {
-    _taskController.close();
-  }
-}
 class QuickTaskItem extends StatefulWidget {
   final QuickTask task;
   final VoidCallback onUpdate;
@@ -572,7 +266,8 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
 
     try {
       // Update main task and all subtasks
-      await QuickTaskService.updateTaskCompletion(widget.task.id, value);
+      await FirebaseTaskService.updateQuickTaskCompletion(
+          widget.task.id, value);
       widget.onUpdate();
     } catch (e) {
       if (!mounted) return;
@@ -585,7 +280,7 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
   Future<void> _handleSubtaskCompletion(String subtaskId, bool value) async {
     try {
       // Update subtask and check main task completion
-      await QuickTaskService.updateSubtaskCompletion(
+      await FirebaseTaskService.updateQuickSubtaskCompletion(
         widget.task.id,
         subtaskId,
         value,
@@ -626,7 +321,7 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                
+
                 // Task title
                 Expanded(
                   child: Text(
@@ -642,7 +337,7 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
                     ),
                   ),
                 ),
-                
+
                 // Show dropdown only if has subtasks
                 if (hasSubtasks)
                   IconButton(
@@ -659,7 +354,7 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
                   ),
               ],
             ),
-            
+
             // Subtasks section
             if (hasSubtasks && isExpanded)
               Padding(
@@ -696,7 +391,10 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
                                     : null,
                                 color: subtask.isCompleted
                                     ? Theme.of(context).disabledColor
-                                    : Theme.of(context).textTheme.bodyMedium?.color,
+                                    : Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color,
                               ),
                             ),
                           ),
@@ -711,4 +409,161 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
       ),
     );
   }
+}
+
+class FirebaseTaskService {
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  // Get current user ID
+  static String get _userId => _auth.currentUser?.uid ?? '';
+
+  // Reference to user's scheduled tasks collection
+  static CollectionReference get _scheduledTasksRef =>
+      _firestore.collection('users').doc(_userId).collection('scheduled_tasks');
+
+  // Reference to user's quick tasks collection
+  static CollectionReference get _quickTasksRef =>
+      _firestore.collection('users').doc(_userId).collection('quick_tasks');
+
+  // Scheduled Tasks Methods
+  static Stream<List<TodoItem>> getScheduledTasksStream() {
+    return _scheduledTasksRef.snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return TodoItem.fromJson(data);
+      }).toList();
+    });
+  }
+
+  static Future<void> addScheduledTask(TodoItem task) async {
+    await _scheduledTasksRef.doc(task.id).set(task.toJson());
+  }
+
+  static Future<void> updateScheduledTask(TodoItem task) async {
+    await _scheduledTasksRef.doc(task.id).update(task.toJson());
+  }
+
+  static Future<void> deleteScheduledTask(String taskId) async {
+    await _scheduledTasksRef.doc(taskId).delete();
+  }
+
+  static Future<void> updateScheduledTaskStatus(
+      String taskId, bool isCompleted) async {
+    await _scheduledTasksRef.doc(taskId).update({
+      'isCompleted': isCompleted,
+      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+    });
+  }
+
+  // Quick Tasks Methods
+  static Stream<List<QuickTask>> getQuickTasksStream() {
+    return _quickTasksRef.snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return QuickTask.fromJson(data);
+      }).toList();
+    });
+  }
+
+  static Future<void> addQuickTask(QuickTask task) async {
+    await _quickTasksRef.doc(task.id).set(task.toJson());
+  }
+
+  static Future<void> updateQuickTask(QuickTask task) async {
+    await _quickTasksRef.doc(task.id).update(task.toJson());
+  }
+
+  static Future<void> deleteQuickTask(String taskId) async {
+    await _quickTasksRef.doc(taskId).delete();
+  }
+
+  static Future<void> updateQuickTaskCompletion(
+    String taskId,
+    bool isCompleted,
+  ) async {
+    await _quickTasksRef.doc(taskId).update({
+      'isCompleted': isCompleted,
+      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+    });
+  }
+
+  static Future<void> updateQuickSubtaskCompletion(
+    String taskId,
+    String subtaskId,
+    bool isCompleted,
+  ) async {
+    final taskDoc = await _quickTasksRef.doc(taskId).get();
+    final taskData = taskDoc.data() as Map<String, dynamic>;
+    final subtasks = List<Map<String, dynamic>>.from(taskData['subtasks']);
+
+    final subtaskIndex = subtasks.indexWhere((s) => s['id'] == subtaskId);
+    if (subtaskIndex != -1) {
+      subtasks[subtaskIndex]['isCompleted'] = isCompleted;
+
+      // Check if all subtasks are completed
+      final allCompleted = subtasks.every((s) => s['isCompleted'] == true);
+
+      await _quickTasksRef.doc(taskId).update({
+        'subtasks': subtasks,
+        'isCompleted': allCompleted,
+      });
+    }
+  }
+
+  static Future<void> updateRescheduleScheduledTask(
+      String taskId, DateTime newDate, TimeOfDay? newTime) async {
+    try {
+      // Create a map of fields to update
+      Map<String, dynamic> updateData = {
+        'dueDate': newDate.toIso8601String(),
+      };
+
+      // Only include dueTime if it's provided
+      if (newTime != null) {
+        updateData['dueTime'] = {
+          'hour': newTime.hour,
+          'minute': newTime.minute
+        };
+      }
+
+      await _scheduledTasksRef.doc(taskId).update(updateData);
+    } catch (e) {
+      throw Exception('Failed to update task: $e');
+    }
+  }
+}
+
+// Authentication Service
+class AuthService {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  // Sign up with email and password
+  Future<UserCredential> signUp(String email, String password) async {
+    return await _auth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+
+  // Sign in with email and password
+  Future<UserCredential> signIn(String email, String password) async {
+    return await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+
+  // Sign out
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
+
+  // Get current user
+  User? get currentUser => _auth.currentUser;
+
+  // Auth state changes stream
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
 }
