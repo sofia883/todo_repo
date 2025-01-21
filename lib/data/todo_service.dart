@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -9,7 +10,7 @@ import 'package:to_do_app/data/todo_notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-  // Stream<User?> get authStateChanges => _auth.authStateChanges();
+// Stream<User?> get authStateChanges => _auth.authStateChanges();
 
 class TodoListData {
   String title;
@@ -266,7 +267,7 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
 
     try {
       // Update main task and all subtasks
-      await FirebaseTaskService.updateQuickTaskCompletion(
+      await HybridStorageService.updateQuickTaskCompletion(
           widget.task.id, value);
       widget.onUpdate();
     } catch (e) {
@@ -280,7 +281,7 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
   Future<void> _handleSubtaskCompletion(String subtaskId, bool value) async {
     try {
       // Update subtask and check main task completion
-      await FirebaseTaskService.updateQuickSubtaskCompletion(
+      await HybridStorageService.updateQuickSubtaskCompletion(
         widget.task.id,
         subtaskId,
         value,
@@ -411,131 +412,6 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
   }
 }
 
-class FirebaseTaskService {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  // Get current user ID
-  static String get _userId => _auth.currentUser?.uid ?? '';
-
-  // Reference to user's scheduled tasks collection
-  static CollectionReference get _scheduledTasksRef =>
-      _firestore.collection('users').doc(_userId).collection('scheduled_tasks');
-
-  // Reference to user's quick tasks collection
-  static CollectionReference get _quickTasksRef =>
-      _firestore.collection('users').doc(_userId).collection('quick_tasks');
-
-  // Scheduled Tasks Methods
-  static Stream<List<TodoItem>> getScheduledTasksStream() {
-    return _scheduledTasksRef.snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return TodoItem.fromJson(data);
-      }).toList();
-    });
-  }
-
-  static Future<void> addScheduledTask(TodoItem task) async {
-    await _scheduledTasksRef.doc(task.id).set(task.toJson());
-  }
-
-  static Future<void> updateScheduledTask(TodoItem task) async {
-    await _scheduledTasksRef.doc(task.id).update(task.toJson());
-  }
-
-  static Future<void> deleteScheduledTask(String taskId) async {
-    await _scheduledTasksRef.doc(taskId).delete();
-  }
-
-  static Future<void> updateScheduledTaskStatus(
-      String taskId, bool isCompleted) async {
-    await _scheduledTasksRef.doc(taskId).update({
-      'isCompleted': isCompleted,
-      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
-    });
-  }
-
-  // Quick Tasks Methods
-  static Stream<List<QuickTask>> getQuickTasksStream() {
-    return _quickTasksRef.snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return QuickTask.fromJson(data);
-      }).toList();
-    });
-  }
-
-  static Future<void> addQuickTask(QuickTask task) async {
-    await _quickTasksRef.doc(task.id).set(task.toJson());
-  }
-
-  static Future<void> updateQuickTask(QuickTask task) async {
-    await _quickTasksRef.doc(task.id).update(task.toJson());
-  }
-
-  static Future<void> deleteQuickTask(String taskId) async {
-    await _quickTasksRef.doc(taskId).delete();
-  }
-
-  static Future<void> updateQuickTaskCompletion(
-    String taskId,
-    bool isCompleted,
-  ) async {
-    await _quickTasksRef.doc(taskId).update({
-      'isCompleted': isCompleted,
-      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
-    });
-  }
-
-  static Future<void> updateQuickSubtaskCompletion(
-    String taskId,
-    String subtaskId,
-    bool isCompleted,
-  ) async {
-    final taskDoc = await _quickTasksRef.doc(taskId).get();
-    final taskData = taskDoc.data() as Map<String, dynamic>;
-    final subtasks = List<Map<String, dynamic>>.from(taskData['subtasks']);
-
-    final subtaskIndex = subtasks.indexWhere((s) => s['id'] == subtaskId);
-    if (subtaskIndex != -1) {
-      subtasks[subtaskIndex]['isCompleted'] = isCompleted;
-
-      // Check if all subtasks are completed
-      final allCompleted = subtasks.every((s) => s['isCompleted'] == true);
-
-      await _quickTasksRef.doc(taskId).update({
-        'subtasks': subtasks,
-        'isCompleted': allCompleted,
-      });
-    }
-  }
-
-  static Future<void> updateRescheduleScheduledTask(
-      String taskId, DateTime newDate, TimeOfDay? newTime) async {
-    try {
-      // Create a map of fields to update
-      Map<String, dynamic> updateData = {
-        'dueDate': newDate.toIso8601String(),
-      };
-
-      // Only include dueTime if it's provided
-      if (newTime != null) {
-        updateData['dueTime'] = {
-          'hour': newTime.hour,
-          'minute': newTime.minute
-        };
-      }
-
-      await _scheduledTasksRef.doc(taskId).update(updateData);
-    } catch (e) {
-      throw Exception('Failed to update task: $e');
-    }
-  }
-}
-
 // Authentication Service
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -566,4 +442,708 @@ class AuthService {
 
   // Auth state changes stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
+}
+
+class HybridStorageService {
+  static final HybridStorageService _instance =
+      HybridStorageService._internal();
+  factory HybridStorageService() => _instance;
+  HybridStorageService._internal();
+
+  static final _scheduledTasksController =
+      StreamController<List<TodoItem>>.broadcast();
+  static final _quickTasksController =
+      StreamController<List<QuickTask>>.broadcast();
+
+  // Add initialized flag
+  bool _isInitialized = false;
+
+  // Initialize method that should be called in main.dart or app startup
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      // Load local data immediately
+      final localScheduledTasks = await _loadLocalScheduledTasks();
+      final localQuickTasks = await _loadLocalQuickTasks();
+
+      // Update cache and emit immediately
+      _scheduledTasksCache = localScheduledTasks;
+      _quickTasksCache = localQuickTasks;
+
+      // Emit initial data right away
+      _scheduledTasksController.add(_scheduledTasksCache);
+      _quickTasksController.add(_quickTasksCache);
+
+      // Set up connectivity listener
+      _connectivitySubscription =
+          _connectivity.onConnectivityChanged.listen((result) {
+        if (result != ConnectivityResult.none) {
+          _syncWithFirebase();
+        }
+      });
+
+      // Try Firebase sync in background
+      _syncWithFirebase();
+
+      _isInitialized = true;
+    } catch (e) {
+      print('Error initializing HybridStorageService: $e');
+      // Even if Firebase fails, we still have local data
+    }
+  }
+
+  // Optimized load methods that return cached data immediately if available
+  static Future<List<TodoItem>> loadScheduledTasks() async {
+    if (!_instance._isInitialized) {
+      await _instance.initialize();
+    }
+    return _scheduledTasksCache;
+  }
+
+  static Future<List<QuickTask>> loadQuickTasks() async {
+    if (!_instance._isInitialized) {
+      await _instance.initialize();
+    }
+    return _quickTasksCache;
+  }
+
+  // Modified sync method with better error handling
+  static Future<void> _syncWithFirebase() async {
+    if (_auth.currentUser == null) return;
+
+    try {
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult == ConnectivityResult.none) return;
+
+      // Use Future.wait to run both Firebase queries in parallel
+      final futures = await Future.wait([
+        _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('quick_tasks')
+            .get(),
+        _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('scheduled_tasks')
+            .get(),
+      ]);
+
+      // Process quick tasks
+      final quickTasks =
+          futures[0].docs.map((doc) => QuickTask.fromJson(doc.data())).toList();
+
+      // Process scheduled tasks
+      final scheduledTasks =
+          futures[1].docs.map((doc) => TodoItem.fromJson(doc.data())).toList();
+
+      // Update both caches and storage in parallel
+      await Future.wait([
+        _saveLocalQuickTasks(quickTasks),
+        _saveLocalScheduledTasks(scheduledTasks),
+      ]);
+
+      // Update cache and notify
+      _quickTasksCache = quickTasks;
+      _scheduledTasksCache = scheduledTasks;
+
+      _quickTasksController.add(quickTasks);
+      _scheduledTasksController.add(scheduledTasks);
+    } catch (e) {
+      print('Firebase sync failed: $e');
+      // Continue with local data
+    }
+  }
+
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
+  static final _connectivity = Connectivity();
+  StreamSubscription? _connectivitySubscription;
+  static final _pendingOperations = <Map<String, dynamic>>[];
+
+  static const String _scheduledTasksKey = 'scheduled_tasks';
+  static const String _quickTasksKey = 'quick_tasks';
+  static const String _pendingOperationsKey = 'pending_operations';
+
+  // Cache for immediate access
+  static List<TodoItem> _scheduledTasksCache = [];
+  static List<QuickTask> _quickTasksCache = [];
+  static Stream<List<TodoItem>> get scheduledTasksStream =>
+      _scheduledTasksController.stream;
+  static Stream<List<QuickTask>> get quickTasksStream =>
+      _quickTasksController.stream;
+
+  // Optimized Quick Task methods
+  static Future<void> addQuickTask(QuickTask task) async {
+    // Update cache and notify immediately
+    _quickTasksCache.add(task);
+    _quickTasksController.add(_quickTasksCache);
+
+    // Save locally
+    await _saveLocalQuickTasks(_quickTasksCache);
+
+    // Try Firebase in background
+    _firebaseAddQuickTask(task);
+  }
+
+  static Future<void> deleteQuickTask(String taskId) async {
+    // Update cache and notify immediately
+    _quickTasksCache.removeWhere((task) => task.id == taskId);
+    _quickTasksController.add(_quickTasksCache);
+
+    // Save locally
+    await _saveLocalQuickTasks(_quickTasksCache);
+
+    // Try Firebase in background
+    _firebaseDeleteQuickTask(taskId);
+  }
+
+  static Future<void> updateQuickTask(QuickTask task) async {
+    // Update cache and notify immediately
+    final index = _quickTasksCache.indexWhere((t) => t.id == task.id);
+    if (index != -1) {
+      _quickTasksCache[index] = task;
+      _quickTasksController.add(_quickTasksCache);
+    }
+
+    // Save locally
+    await _saveLocalQuickTasks(_quickTasksCache);
+
+    // Try Firebase in background
+    _firebaseUpdateQuickTask(task);
+  }
+
+  // Optimized Scheduled Task methods
+  static Future<void> addScheduledTask(TodoItem task) async {
+    // Update cache and notify immediately
+    _scheduledTasksCache.add(task);
+    _scheduledTasksController.add(_scheduledTasksCache);
+
+    // Save locally
+    await _saveLocalScheduledTasks(_scheduledTasksCache);
+
+    // Try Firebase in background
+    _firebaseAddScheduledTask(task);
+  }
+
+  static Future<void> deleteScheduledTask(String taskId) async {
+    // Update cache and notify immediately
+    _scheduledTasksCache.removeWhere((task) => task.id == taskId);
+    _scheduledTasksController.add(_scheduledTasksCache);
+
+    // Save locally
+    await _saveLocalScheduledTasks(_scheduledTasksCache);
+
+    // Try Firebase in background
+    _firebaseDeleteScheduledTask(taskId);
+  }
+
+  static Future<void> updateScheduledTask(TodoItem task) async {
+    // Update cache and notify immediately
+    final index = _scheduledTasksCache.indexWhere((t) => t.id == task.id);
+    if (index != -1) {
+      _scheduledTasksCache[index] = task;
+      _scheduledTasksController.add(_scheduledTasksCache);
+    }
+
+    // Save locally
+    await _saveLocalScheduledTasks(_scheduledTasksCache);
+
+    // Try Firebase in background
+    _firebaseUpdateScheduledTask(task);
+  }
+
+  // Add similar _firebaseXXX methods for other operations...
+
+  // Expose streams for UI
+  static Stream<List<TodoItem>> getScheduledTasksStream() =>
+      _scheduledTasksController.stream;
+  static Stream<List<QuickTask>> getQuickTasksStream() =>
+      _quickTasksController.stream;
+
+  // Quick Tasks Methods
+  static Future<List<QuickTask>> _loadLocalQuickTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final tasksJson = prefs.getString(_quickTasksKey);
+    if (tasksJson == null) return [];
+
+    final List<dynamic> decoded = json.decode(tasksJson);
+    return decoded.map((item) => QuickTask.fromJson(item)).toList();
+  }
+
+  static Future<void> _saveLocalQuickTasks(List<QuickTask> tasks) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encodedTasks =
+        json.encode(tasks.map((task) => task.toJson()).toList());
+    await prefs.setString(_quickTasksKey, encodedTasks);
+  }
+
+  static Future<void> updateQuickTaskCompletion(
+      String taskId, bool isCompleted) async {
+    try {
+      // Update locally
+      final tasks = await _loadLocalQuickTasks();
+      final index = tasks.indexWhere((t) => t.id == taskId);
+      if (index != -1) {
+        tasks[index] = tasks[index].copyWith(isCompleted: isCompleted);
+        await _saveLocalQuickTasks(tasks);
+      }
+
+      // Update Firebase if online
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('quick_tasks')
+            .doc(taskId)
+            .update({
+          'isCompleted': isCompleted,
+          'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+        });
+      } else {
+        _addPendingOperation({
+          'type': 'update_quick_completion',
+          'taskId': taskId,
+          'isCompleted': isCompleted,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+
+      _quickTasksController.add(tasks);
+    } catch (e) {
+      print('Error updating quick task completion: $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> updateQuickSubtaskCompletion(
+    String taskId,
+    String subtaskId,
+    bool isCompleted,
+  ) async {
+    try {
+      // Update locally
+      final tasks = await _loadLocalQuickTasks();
+      final taskIndex = tasks.indexWhere((t) => t.id == taskId);
+
+      if (taskIndex != -1) {
+        final task = tasks[taskIndex];
+        final updatedSubtasks = task.subtasks
+            .map((subtask) => subtask.id == subtaskId
+                ? subtask.copyWith(isCompleted: isCompleted)
+                : subtask)
+            .toList();
+
+        final allCompleted =
+            updatedSubtasks.every((subtask) => subtask.isCompleted);
+        tasks[taskIndex] = task.copyWith(
+          subtasks: updatedSubtasks,
+          isCompleted: allCompleted,
+        );
+
+        await _saveLocalQuickTasks(tasks);
+      }
+
+      // Update Firebase if online
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        final taskDoc = await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('quick_tasks')
+            .doc(taskId)
+            .get();
+
+        if (taskDoc.exists) {
+          final taskData = taskDoc.data()!;
+          final subtasks =
+              List<Map<String, dynamic>>.from(taskData['subtasks']);
+
+          final subtaskIndex = subtasks.indexWhere((s) => s['id'] == subtaskId);
+          if (subtaskIndex != -1) {
+            subtasks[subtaskIndex]['isCompleted'] = isCompleted;
+
+            final allCompleted =
+                subtasks.every((s) => s['isCompleted'] == true);
+
+            await taskDoc.reference.update({
+              'subtasks': subtasks,
+              'isCompleted': allCompleted,
+            });
+          }
+        }
+      } else {
+        _addPendingOperation({
+          'type': 'update_quick_subtask',
+          'taskId': taskId,
+          'subtaskId': subtaskId,
+          'isCompleted': isCompleted,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+
+      _quickTasksController.add(tasks);
+    } catch (e) {
+      print('Error updating quick subtask completion: $e');
+      rethrow;
+    }
+  }
+
+  // Scheduled Tasks Methods
+  static Future<void> updateRescheduleScheduledTask(
+    String taskId,
+    DateTime newDate,
+    TimeOfDay? newTime,
+  ) async {
+    try {
+      // Update locally
+      final tasks = await _loadLocalScheduledTasks();
+      final index = tasks.indexWhere((t) => t.id == taskId);
+      if (index != -1) {
+        tasks[index] = TodoItem(
+          id: tasks[index].id,
+          title: tasks[index].title,
+          description: tasks[index].description,
+          createdAt: tasks[index].createdAt,
+          dueDate: newDate,
+          dueTime: newTime,
+          isCompleted: tasks[index].isCompleted,
+          completedAt: tasks[index].completedAt,
+          subtasks: tasks[index].subtasks,
+        );
+        await _saveLocalScheduledTasks(tasks);
+      }
+
+      // Update Firebase if online
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        Map<String, dynamic> updateData = {
+          'dueDate': newDate.toIso8601String(),
+        };
+
+        if (newTime != null) {
+          updateData['dueTime'] = {
+            'hour': newTime.hour,
+            'minute': newTime.minute
+          };
+        }
+
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('scheduled_tasks')
+            .doc(taskId)
+            .update(updateData);
+      } else {
+        _addPendingOperation({
+          'type': 'reschedule_task',
+          'taskId': taskId,
+          'newDate': newDate.toIso8601String(),
+          'newTime': newTime != null
+              ? {'hour': newTime.hour, 'minute': newTime.minute}
+              : null,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+
+      _scheduledTasksController.add(tasks);
+    } catch (e) {
+      print('Error rescheduling task: $e');
+      rethrow;
+    }
+  }
+
+  // Helper methods for local storage
+  static Future<List<TodoItem>> _loadLocalScheduledTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final tasksJson = prefs.getString(_scheduledTasksKey);
+    if (tasksJson == null) return [];
+
+    final List<dynamic> decoded = json.decode(tasksJson);
+    return decoded.map((item) => TodoItem.fromJson(item)).toList();
+  }
+
+  static Future<void> _saveLocalScheduledTasks(List<TodoItem> tasks) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encodedTasks =
+        json.encode(tasks.map((task) => task.toJson()).toList());
+    await prefs.setString(_scheduledTasksKey, encodedTasks);
+  }
+
+  static Future<void> _firebaseAddQuickTask(QuickTask task) async {
+    try {
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('quick_tasks')
+            .doc(task.id)
+            .set(task.toJson());
+      } else {
+        _addPendingOperation({
+          'type': 'add_quick',
+          'data': task.toJson(),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      print('Background Firebase add quick task failed: $e');
+    }
+  }
+
+  static Future<void> _firebaseDeleteQuickTask(String taskId) async {
+    try {
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('quick_tasks')
+            .doc(taskId)
+            .delete();
+      } else {
+        _addPendingOperation({
+          'type': 'delete_quick',
+          'taskId': taskId,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      print('Background Firebase delete quick task failed: $e');
+    }
+  }
+
+  static Future<void> _firebaseUpdateQuickTask(QuickTask task) async {
+    try {
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('quick_tasks')
+            .doc(task.id)
+            .update(task.toJson());
+      } else {
+        _addPendingOperation({
+          'type': 'update_quick',
+          'data': task.toJson(),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      print('Background Firebase update quick task failed: $e');
+    }
+  }
+
+  // Background Firebase operations for Scheduled Tasks
+  static Future<void> _firebaseAddScheduledTask(TodoItem task) async {
+    try {
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('scheduled_tasks')
+            .doc(task.id)
+            .set(task.toJson());
+      } else {
+        _addPendingOperation({
+          'type': 'add_scheduled',
+          'data': task.toJson(),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      print('Background Firebase add scheduled task failed: $e');
+    }
+  }
+
+  static Future<void> _firebaseDeleteScheduledTask(String taskId) async {
+    try {
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('scheduled_tasks')
+            .doc(taskId)
+            .delete();
+      } else {
+        _addPendingOperation({
+          'type': 'delete_scheduled',
+          'taskId': taskId,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      print('Background Firebase delete scheduled task failed: $e');
+    }
+  }
+
+  static Future<void> _firebaseUpdateScheduledTask(TodoItem task) async {
+    try {
+      final connectivityResult = await _connectivity.checkConnectivity();
+      if (connectivityResult != ConnectivityResult.none &&
+          _auth.currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('scheduled_tasks')
+            .doc(task.id)
+            .update(task.toJson());
+      } else {
+        _addPendingOperation({
+          'type': 'update_scheduled',
+          'data': task.toJson(),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      print('Background Firebase update scheduled task failed: $e');
+    }
+  }
+
+  // Update sync method to handle new quick task operations
+  Future<void> _syncPendingOperations() async {
+    if (_auth.currentUser == null || _pendingOperations.isEmpty) return;
+
+    final operations = List<Map<String, dynamic>>.from(_pendingOperations);
+    _pendingOperations.clear();
+
+    for (final operation in operations) {
+      try {
+        switch (operation['type']) {
+          case 'add_scheduled':
+          case 'add_quick':
+            await _firestore
+                .collection('users')
+                .doc(_auth.currentUser!.uid)
+                .collection(operation['type'] == 'add_scheduled'
+                    ? 'scheduled_tasks'
+                    : 'quick_tasks')
+                .doc(operation['data']['id'])
+                .set(operation['data']);
+            break;
+
+          case 'update_quick':
+            await _firestore
+                .collection('users')
+                .doc(_auth.currentUser!.uid)
+                .collection('quick_tasks')
+                .doc(operation['data']['id'])
+                .update(operation['data']);
+            break;
+
+          case 'update_quick_completion':
+            await _firestore
+                .collection('users')
+                .doc(_auth.currentUser!.uid)
+                .collection('quick_tasks')
+                .doc(operation['taskId'])
+                .update({
+              'isCompleted': operation['isCompleted'],
+              'completedAt': operation['isCompleted']
+                  ? FieldValue.serverTimestamp()
+                  : null,
+            });
+            break;
+
+          case 'update_quick_subtask':
+            final taskDoc = await _firestore
+                .collection('users')
+                .doc(_auth.currentUser!.uid)
+                .collection('quick_tasks')
+                .doc(operation['taskId'])
+                .get();
+
+            if (taskDoc.exists) {
+              final taskData = taskDoc.data()!;
+              final subtasks =
+                  List<Map<String, dynamic>>.from(taskData['subtasks']);
+              final subtaskIndex =
+                  subtasks.indexWhere((s) => s['id'] == operation['subtaskId']);
+
+              if (subtaskIndex != -1) {
+                subtasks[subtaskIndex]['isCompleted'] =
+                    operation['isCompleted'];
+                final allCompleted =
+                    subtasks.every((s) => s['isCompleted'] == true);
+
+                await taskDoc.reference.update({
+                  'subtasks': subtasks,
+                  'isCompleted': allCompleted,
+                });
+              }
+            }
+            break;
+
+          case 'reschedule_task':
+            Map<String, dynamic> updateData = {
+              'dueDate': operation['newDate'],
+            };
+            if (operation['newTime'] != null) {
+              updateData['dueTime'] = operation['newTime'];
+            }
+
+            await _firestore
+                .collection('users')
+                .doc(_auth.currentUser!.uid)
+                .collection('scheduled_tasks')
+                .doc(operation['taskId'])
+                .update(updateData);
+            break;
+
+          case 'delete_quick':
+            await _firestore
+                .collection('users')
+                .doc(_auth.currentUser!.uid)
+                .collection('quick_tasks')
+                .doc(operation['taskId'])
+                .delete();
+            break;
+        }
+      } catch (e) {
+        print('Error syncing operation: $e');
+        _pendingOperations.add(operation);
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _pendingOperationsKey, json.encode(_pendingOperations));
+  }
+
+  // Pending operations management
+  static Future<void> _loadPendingOperations() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingJson = prefs.getString(_pendingOperationsKey);
+    if (pendingJson != null) {
+      final List<dynamic> decoded = json.decode(pendingJson);
+      _pendingOperations.addAll(decoded.cast<Map<String, dynamic>>());
+    }
+  }
+
+  static void _addPendingOperation(Map<String, dynamic> operation) async {
+    _pendingOperations.add(operation);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _pendingOperationsKey, json.encode(_pendingOperations));
+  }
+
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    _scheduledTasksController.close();
+    _quickTasksController.close();
+  }
 }

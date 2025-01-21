@@ -107,7 +107,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       backgroundColor: Color(0xFFF5F7FF),
       body: StreamBuilder<List<TodoItem>>(
-        stream: FirebaseTaskService.getScheduledTasksStream(),
+        stream: HybridStorageService.getScheduledTasksStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
