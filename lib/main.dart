@@ -13,7 +13,7 @@ import 'package:firebase_core/firebase_core.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await HybridStorageService().initialize();
+
   // Enable offline persistence
   FirebaseFirestore.instance.settings = Settings(
     persistenceEnabled: true,
@@ -44,7 +44,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             return CircularProgressIndicator();
           }
           if (snapshot.hasData) {
-            return WelcomePage();
+            return TodoList();
           }
           return LoginPage();
         },

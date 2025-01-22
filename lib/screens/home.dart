@@ -114,10 +114,8 @@ class _TodoListState extends State<TodoList> {
   @override
   void initState() {
     super.initState();
-    _initializeService();
-    _initializeData();
     _notificationService.initialize();
-    HybridStorageService.getQuickTasksStream();
+    FirebaseTaskService.getQuickTasksStream();
     // _startOverdueTimer();
     selectedDate = DateTime.now();
     displayedMonth = DateTime.now();
@@ -135,34 +133,6 @@ class _TodoListState extends State<TodoList> {
     _todoSubscription?.cancel(); // Cancel subscription when disposing
     _timer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _initializeData() async {
-    try {
-      // Initialize the HybridStorageService first
-      await HybridStorageService().initialize();
-
-      // Load initial data
-      if (isQuickAddMode) {
-        _quickTasks = await HybridStorageService.loadQuickTasks();
-      } else {
-        _currentTasks = await HybridStorageService.loadScheduledTasks();
-      }
-
-      // Only set isLoading to false when we have data
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error initializing data: $e');
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
-    }
   }
 
   List<TodoItem> _getOverdueTasks() {
@@ -448,7 +418,7 @@ class _TodoListState extends State<TodoList> {
       final deletedTodo = todo;
 
       try {
-        await HybridStorageService.deleteScheduledTask(todo.id);
+        await FirebaseTaskService.deleteScheduledTask(todo.id);
 
         if (!context.mounted) return;
 
@@ -463,7 +433,7 @@ class _TodoListState extends State<TodoList> {
                     todos.add(deletedTodo);
                   });
 
-                  await HybridStorageService.addScheduledTask(deletedTodo);
+                  await FirebaseTaskService.addScheduledTask(deletedTodo);
 
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -526,7 +496,7 @@ class _TodoListState extends State<TodoList> {
       });
 
       try {
-        await HybridStorageService.updateScheduledTask(todo);
+        await FirebaseTaskService.updateScheduledTask(todo);
 
         // Show success snackbar
         if (!context.mounted) return;
@@ -751,7 +721,7 @@ class _TodoListState extends State<TodoList> {
                                     });
                                     updateMainTaskStatus(setState);
                                     try {
-                                      await HybridStorageService
+                                      await FirebaseTaskService
                                           .updateScheduledTask(todo);
                                     } catch (e) {
                                       // Handle error
@@ -885,7 +855,7 @@ class _TodoListState extends State<TodoList> {
           },
           onDismissed: (direction) async {
             try {
-              await HybridStorageService.deleteQuickTask(task.id);
+              await FirebaseTaskService.deleteQuickTask(task.id);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Task deleted'),
@@ -893,7 +863,7 @@ class _TodoListState extends State<TodoList> {
                     label: 'UNDO',
                     onPressed: () async {
                       try {
-                        await HybridStorageService.addQuickTask(task);
+                        await FirebaseTaskService.addQuickTask(task);
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Task restored'),
@@ -973,7 +943,7 @@ class _TodoListState extends State<TodoList> {
                                   setState(() {
                                     task.isCompleted = value;
                                   });
-                                  await HybridStorageService.updateQuickTask(
+                                  await FirebaseTaskService.updateQuickTask(
                                       task);
                                 }
                               },
@@ -1036,7 +1006,7 @@ class _TodoListState extends State<TodoList> {
                                 subtask.isCompleted = value;
                               }
                             });
-                            await HybridStorageService.updateQuickTask(task);
+                            await FirebaseTaskService.updateQuickTask(task);
                           }
                         },
                       ),
@@ -1093,7 +1063,7 @@ class _TodoListState extends State<TodoList> {
                                     task.subtasks.every((st) => st.isCompleted);
                                 task.isCompleted = allSubtasksCompleted;
                               });
-                              await HybridStorageService.updateQuickTask(task);
+                              await FirebaseTaskService.updateQuickTask(task);
                             },
                           ),
                           title: Text(
@@ -1183,7 +1153,7 @@ class _TodoListState extends State<TodoList> {
               },
             );
 
-            HybridStorageService
+            FirebaseTaskService
                 .getQuickTasksStream(); // Reload tasks to reflect newly added quick tasks.
           } else {
             _showAddTaskDialog();
@@ -1311,7 +1281,7 @@ class _TodoListState extends State<TodoList> {
 
       await _todoSubscription?.cancel();
 
-      _todoSubscription = HybridStorageService.getScheduledTasksStream().listen(
+      _todoSubscription = FirebaseTaskService.getScheduledTasksStream().listen(
         (updatedTodos) {
           print('Received ${updatedTodos.length} todos from stream');
           setState(() {
@@ -1335,93 +1305,100 @@ class _TodoListState extends State<TodoList> {
   }
 
   Widget _buildTaskList() {
-    return StreamBuilder<List<dynamic>>(
-      // Use the appropriate stream based on mode
-      stream: isQuickAddMode
-          ? HybridStorageService.getQuickTasksStream()
-          : HybridStorageService.getScheduledTasksStream(),
-      builder: (context, snapshot) {
-        // Show loading only when we have no data and are waiting
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        // Handle error state
-        if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Error loading tasks: ${snapshot.error}',
-              style: TextStyle(color: Colors.red),
-            ),
-          );
-        }
+    if (isQuickAddMode) {
+      return StreamBuilder<List<QuickTask>>(
+        stream: FirebaseTaskService.getQuickTasksStream(),
+        initialData: _quickTasks, // Use cached data initially
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              _quickTasks.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-        final tasks = snapshot.data ?? [];
+          final quickTasks = snapshot.data ?? [];
 
-        if (tasks.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.task_alt, size: 56, color: Colors.grey[300]),
-                const SizedBox(height: 16),
-                Text(
-                  isQuickAddMode
-                      ? 'No quick tasks added yet'
-                      : showMyTasksOnly
-                          ? 'No overdue tasks'
-                          : 'No tasks for ${DateFormat('MMMM d').format(selectedDate)}',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey[600],
+          // Update cached tasks when new data arrives
+          if (snapshot.hasData && snapshot.data != _quickTasks) {
+            _quickTasks = snapshot.data!;
+          }
+
+          if (quickTasks.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.task_alt, size: 56, color: Colors.grey[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No quick tasks added yet',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[600],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            key: ValueKey(
+                'quick-tasks-${DateTime.now().millisecondsSinceEpoch}'),
+            shrinkWrap: true,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            itemCount: quickTasks.length,
+            itemBuilder: (context, index) {
+              final task = quickTasks[index];
+              return _buildQuickTaskItem(task, context);
+            },
           );
-        }
+        },
+      );
+    } else {
+      // Handle regular tasks
+      _currentTasks =
+          showMyTasksOnly ? _getOverdueTasks() : _getTasksForSelectedDate();
 
-        return ListView.builder(
-          key: ValueKey(
-              '${isQuickAddMode ? "quick" : "regular"}-tasks-${DateTime.now().millisecondsSinceEpoch}'),
-          shrinkWrap: true,
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemCount: tasks.length,
-          itemBuilder: (context, index) {
-            if (isQuickAddMode) {
-              final quickTask = tasks[index] as QuickTask;
-              return QuickTaskItem(
-                task: quickTask,
-                onUpdate: () {
-                  // Trigger rebuild if needed
-                  setState(() {});
-                },
-              );
-            } else {
-              final todo = tasks[index] as TodoItem;
-              final isOverdue = _isTaskOverdue(todo);
-              return _buildTaskItem(todo, isOverdue);
-            }
-          },
+      if (_currentTasks.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.task_alt, size: 56, color: Colors.grey[300]),
+              const SizedBox(height: 16),
+              Text(
+                showMyTasksOnly
+                    ? 'No overdue tasks'
+                    : 'No tasks for ${DateFormat('MMMM d').format(selectedDate)}',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
         );
-      },
-    );
-  }
+      }
 
-// Make sure to initialize the service in your initState
-
-  Future<void> _initializeService() async {
-    try {
-      await HybridStorageService().initialize();
-      setState(() {
-        isLoading = false;
-      });
-    } catch (e) {
-      print('Error initializing service: $e');
-      // Handle error appropriately
+      return ListView.builder(
+        key: ValueKey('regular-tasks-${DateTime.now().millisecondsSinceEpoch}'),
+        shrinkWrap: true,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: _currentTasks.length,
+        itemBuilder: (context, index) {
+          final todo = _currentTasks[index];
+          final isOverdue = _isTaskOverdue(todo);
+          return _buildTaskItem(todo, isOverdue);
+        },
+      );
     }
   }
 
@@ -1446,7 +1423,7 @@ class _TodoListState extends State<TodoList> {
                 setState(() {
                   subtask.isCompleted = value ?? false;
                 });
-                await HybridStorageService.addQuickTask(task);
+                await FirebaseTaskService.addQuickTask(task);
               },
             ),
             title: Text(
@@ -1624,7 +1601,7 @@ class _TodoListState extends State<TodoList> {
 
                                 try {
                                   // Update both date and time
-                                  await HybridStorageService
+                                  await FirebaseTaskService
                                       .updateRescheduleScheduledTask(
                                     todo.id,
                                     selectedDate,
@@ -2394,7 +2371,7 @@ class _TodoListState extends State<TodoList> {
                                 ),
                               );
 
-                              await HybridStorageService.addScheduledTask(
+                              await FirebaseTaskService.addScheduledTask(
                                   newTodo);
 
                               // Close loading indicator
@@ -2719,8 +2696,7 @@ void showQuickAddTaskSheet(
                                   subtasks: List.from(subtasks),
                                 );
 
-                                await HybridStorageService.addQuickTask(
-                                    newTask);
+                                await FirebaseTaskService.addQuickTask(newTask);
                                 onTaskAdded(newTask);
                                 Navigator.pop(context);
                               } catch (e) {
