@@ -417,10 +417,7 @@ class FirebaseTaskService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
   static bool _isOnline = true;
- static Future<bool> isNetworkAvailable() async {
-    final connectivityResult = await Connectivity().checkConnectivity();
-    return connectivityResult != ConnectivityResult.none;
-  }
+
   // Initialize offline persistence
   static Future<void> initializeOfflineStorage() async {
     await _firestore.enablePersistence();

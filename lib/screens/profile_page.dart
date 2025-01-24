@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -17,9 +18,19 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   File? _profileImage;
   final ImagePicker _picker = ImagePicker();
-  final TextEditingController _nameController =
-      TextEditingController(text: 'User Name');
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   bool _isEditingName = false;
+  bool _isEditingEmail = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize with current user details
+    final currentUser = FirebaseAuth.instance.currentUser;
+    _nameController.text = currentUser?.displayName ?? 'User Name';
+    _emailController.text = currentUser?.email ?? 'user@example.com';
+  }
 
   @override
   void dispose() {
@@ -120,88 +131,51 @@ class _ProfilePageState extends State<ProfilePage> {
           final totalTasks = todos.length;
 
           return CustomScrollView(
+            // Modern Profile Header
             slivers: [
-              // Modern Profile Header
+              SliverAppBar(
+                expandedHeight: 250.0,
+                floating: false,
+                pinned: true,
+                flexibleSpace: FlexibleSpaceBar(
+                  background: _buildProfileHeader(),
+                  title: Text(
+                    _nameController.text,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  centerTitle: true,
+                ),
+                backgroundColor: Colors.indigo, // Indigo app bar
+              ),
               SliverToBoxAdapter(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Colors.blue[400]!, Colors.blue[600]!],
-                    ),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(30),
-                      bottomRight: Radius.circular(30),
-                    ),
-                  ),
-                  child: SafeArea(
-                    child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          // Profile Image
-                          _buildProfileImage(),
-                          SizedBox(height: 15),
-                          // Name
-                          _buildNameWidget(),
-                          SizedBox(height: 20),
-                          // Activity Stats
-                          _buildActivityStats(
-                              totalTasks, completedTasks.length),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Task Statistics Cards
-              SliverPadding(
-                padding: EdgeInsets.all(20),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Activities',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      SizedBox(height: 15),
-                      _buildActivityCards(todos),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Recent Activity
-              SliverPadding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Recent Activity',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      SizedBox(height: 15),
-                      _buildRecentActivity(todos),
-                    ],
-                  ),
-                ),
+                child: _buildProgressSection(widget.todos),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.white, Colors.indigo],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildProfileImage(),
+          SizedBox(height: 10),
+          _buildNameEmailSection(),
+        ],
       ),
     );
   }
@@ -211,47 +185,112 @@ class _ProfilePageState extends State<ProfilePage> {
       alignment: Alignment.bottomRight,
       children: [
         Container(
-          width: 100,
-          height: 100,
+          width: 120,
+          height: 120,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3),
+            border: Border.all(color: Colors.white, width: 4),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black26,
                 blurRadius: 10,
-                spreadRadius: 2,
+                offset: Offset(0, 4),
               ),
             ],
-          ),
-          child: CircleAvatar(
-            backgroundColor: Colors.white,
-            backgroundImage:
-                _profileImage != null ? FileImage(_profileImage!) : null,
-            child: _profileImage == null
-                ? Icon(Icons.person, size: 50, color: Colors.grey[400])
+            image: _profileImage != null
+                ? DecorationImage(
+                    image: FileImage(_profileImage!),
+                    fit: BoxFit.cover,
+                  )
                 : null,
           ),
+          child: _profileImage == null
+              ? Icon(
+                  Icons.person,
+                  size: 60,
+                  color: Colors.indigo[200],
+                )
+              : null,
         ),
-        GestureDetector(
-          onTap: _showImagePickerOptions,
+        Positioned(
+          bottom: 0,
+          right: 0,
           child: Container(
-            padding: EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black12,
                   blurRadius: 5,
-                  spreadRadius: 1,
                 ),
               ],
             ),
-            child: Icon(Icons.camera_alt, size: 20, color: Colors.blue[600]),
+            child: IconButton(
+              icon: Icon(
+                Icons.camera_alt,
+                color: Colors.indigo,
+              ),
+              onPressed: _showImagePickerOptions,
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildNameEmailSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Column(
+        children: [
+          // Name Section
+          _isEditingName
+              ? TextField(
+                  controller: _nameController,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                  decoration: InputDecoration(
+                    border: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(Icons.check, color: Colors.white),
+                      onPressed: () {
+                        setState(() {
+                          _isEditingName = false;
+                          // TODO: Update display name in Firebase
+                        });
+                      },
+                    ),
+                  ),
+                )
+              : GestureDetector(
+                  onTap: () => setState(() => _isEditingName = true),
+                  child: Text(
+                    _nameController.text,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+          SizedBox(height: 10),
+          // Email Section
+          Text(
+            _emailController.text,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -302,23 +341,283 @@ class _ProfilePageState extends State<ProfilePage> {
           );
   }
 
-  Widget _buildActivityStats(int totalTasks, int completedTasks) {
-    final completionRate =
-        totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+  Widget _buildProgressSection(List<TodoItem> todos) {
+    final completedTasks = todos.where((todo) => todo.isCompleted).toList();
+    final pendingTasks = _getPendingTasks(todos);
+    final overdueTasks = _getOverdueTasks(todos);
 
-    return Container(
-      padding: EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+    // Calculate progress percentages
+    final totalTasks = todos.length;
+    final completionRate = totalTasks > 0
+        ? (completedTasks.length / totalTasks * 100).toStringAsFixed(1)
+        : '0.0';
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: NeverScrollableScrollPhysics(),
+        childAspectRatio: 1.2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
         children: [
-          _buildStatItem('Total Tasks', totalTasks.toString()),
-          _buildStatItem('Completed', '$completedTasks'),
-          _buildStatItem(
-              'Success Rate', '${completionRate.toStringAsFixed(1)}%'),
+          _buildProgressCard(
+            title: 'Completed Tasks',
+            count: completedTasks.length.toString(),
+            icon: Icons.check_circle,
+            color: Colors.green,
+            onTap: () =>
+                _showTaskDetailsBottomSheet('Completed Tasks', completedTasks),
+          ),
+          _buildProgressCard(
+            title: 'Pending Tasks',
+            count: pendingTasks.length.toString(),
+            icon: Icons.pending_actions,
+            color: Colors.orange,
+            onTap: () =>
+                _showTaskDetailsBottomSheet('Pending Tasks', pendingTasks),
+          ),
+          _buildProgressCard(
+            title: 'Overdue Tasks',
+            count: overdueTasks.length.toString(),
+            icon: Icons.warning_amber_rounded,
+            color: Colors.red,
+            onTap: () =>
+                _showTaskDetailsBottomSheet('Overdue Tasks', overdueTasks),
+          ),
+          _buildProgressCard(
+            title: 'Progress',
+            count: '$completionRate%',
+            icon: Icons.timeline,
+            color: Colors.blue,
+            onTap: _showProgressDetailsBottomSheet,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressCard({
+    required String title,
+    required String count,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: color,
+                size: 40,
+              ),
+            ),
+            SizedBox(height: 10),
+            Text(
+              count,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            SizedBox(height: 5),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showTaskDetailsBottomSheet(String title, List<TodoItem> tasks) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Bottom sheet handle
+              Container(
+                width: 40,
+                height: 5,
+                margin: EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  controller: controller,
+                  itemCount: tasks.length,
+                  itemBuilder: (context, index) {
+                    final task = tasks[index];
+                    return ListTile(
+                      title: Text(task.title),
+                      subtitle: Text(
+                        'Due: ${DateFormat('MMM dd, yyyy').format(task.dueDate)}',
+                      ),
+                      trailing: task.isCompleted
+                          ? Icon(Icons.check_circle, color: Colors.green)
+                          : Icon(Icons.pending, color: Colors.orange),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showProgressDetailsBottomSheet() {
+    final todos = widget.todos;
+    final totalTasks = todos.length;
+    final completedTasks = todos.where((todo) => todo.isCompleted).length;
+    final pendingTasks = _getPendingTasks(todos).length;
+    final overdueTasks = _getOverdueTasks(todos).length;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Task Progress Overview',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 20),
+            _buildProgressDetailItem(
+              'Total Tasks',
+              totalTasks,
+              Colors.blue,
+            ),
+            _buildProgressDetailItem(
+              'Completed Tasks',
+              completedTasks,
+              Colors.green,
+            ),
+            _buildProgressDetailItem(
+              'Pending Tasks',
+              pendingTasks,
+              Colors.orange,
+            ),
+            _buildProgressDetailItem(
+              'Overdue Tasks',
+              overdueTasks,
+              Colors.red,
+            ),
+            SizedBox(height: 20),
+            LinearProgressIndicator(
+              value: totalTasks > 0 ? completedTasks / totalTasks : 0,
+              backgroundColor: Colors.grey[300],
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+              minHeight: 10,
+            ),
+            SizedBox(height: 10),
+            Center(
+              child: Text(
+                '${(totalTasks > 0 ? completedTasks / totalTasks * 100 : 0).toStringAsFixed(1)}% Completed',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgressDetailItem(String label, int count, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[700],
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Text(
+              count.toString(),
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -509,9 +808,5 @@ class _ProfilePageState extends State<ProfilePage> {
                 !_isTaskOverdue(task) // Not overdue
             )
         .toList();
-  }
-
-  void _showTaskDetailsBottomSheet(String title, List<TodoItem> tasks) {
-    // Existing bottom sheet implementation...
   }
 }

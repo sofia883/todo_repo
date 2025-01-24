@@ -12,35 +12,37 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isPasswordVisible = false;
-Future<void> _handleLogin() async {
-  if (_formKey.currentState!.validate()) {
-    setState(() => _isLoading = true);
-    try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-      if (mounted) {
-        // Clear the navigation stack and go to welcome page
-        Navigator.pushNamedAndRemoveUntil(
-          context, 
-          '/welcome', 
-          (route) => false
+  Future<void> _handleLogin() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+      try {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
         );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? 'Login failed')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+        if (mounted) {
+          // Clear the navigation stack and go to welcome page
+          Navigator.pushNamedAndRemoveUntil(
+              context, '/welcome', (route) => false);
+        }
+      } on FirebaseAuthException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message ?? 'Login failed')),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     }
   }
-}
+
+  void _skipLogin() {
+    Navigator.pushNamedAndRemoveUntil(context, '/welcome', (route) => false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -201,6 +203,16 @@ Future<void> _handleLogin() async {
                         'Don\'t have an account? Sign Up',
                         style: TextStyle(
                           color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _skipLogin,
+                      child: Text(
+                        'Skip Login',
+                        style: TextStyle(
+                          color: Colors.white70,
                           fontSize: 16,
                         ),
                       ),
@@ -393,7 +405,8 @@ class _SignupPageState extends State<SignupPage> {
                       decoration: InputDecoration(
                         labelText: 'Confirm Password',
                         labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.lock_outline, color: Colors.orange),
+                        prefixIcon:
+                            Icon(Icons.lock_outline, color: Colors.orange),
                         suffixIcon: IconButton(
                           icon: Icon(
                             _isConfirmPasswordVisible
@@ -403,7 +416,8 @@ class _SignupPageState extends State<SignupPage> {
                           ),
                           onPressed: () {
                             setState(() {
-                              _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
+                              _isConfirmPasswordVisible =
+                                  !_isConfirmPasswordVisible;
                             });
                           },
                         ),
@@ -482,6 +496,7 @@ class _SignupPageState extends State<SignupPage> {
     super.dispose();
   }
 }
+
 // Authentication Service
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
