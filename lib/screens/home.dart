@@ -1467,10 +1467,6 @@ class _TodoListState extends State<TodoList> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    // Ensure initialDate is not before today
-    if (selectedDate.isBefore(today)) {
-      selectedDate = today;
-    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1535,7 +1531,7 @@ class _TodoListState extends State<TodoList> {
                         onTap: () async {
                           final picked = await showDatePicker(
                             context: context,
-                            initialDate: selectedDate,
+                            initialDate: today,
                             firstDate: today,
                             lastDate: DateTime.now().add(Duration(days: 365)),
                             builder: (context, child) {
