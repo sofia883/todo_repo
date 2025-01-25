@@ -547,12 +547,13 @@ class _TodoListState extends State<TodoList> {
             child: const Icon(Icons.delete, color: Colors.white),
           ),
           confirmDismiss: (direction) async {
+            // Show confirmation dialog
             final shouldDelete = await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
                 title: const Text('Delete Task'),
                 content:
-                    const Text('Are you sure you want to delete this task?'),
+                    Text('Are you sure you want to delete "${todo.title}"?'),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
@@ -568,7 +569,7 @@ class _TodoListState extends State<TodoList> {
             );
 
             if (shouldDelete ?? false) {
-              handleDelete(todo);
+              await handleDelete(todo);
             }
             return false;
           },
@@ -583,27 +584,42 @@ class _TodoListState extends State<TodoList> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Checkbox with circular background
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isOverdue
-                              ? Colors.red.withOpacity(0.1)
-                              : currentCategoryColor.withOpacity(0.1),
+                      // Existing checkbox and task details...
+
+                      // Add a reschedule icon for overdue tasks
+                      if (isOverdue)
+                        IconButton(
+                          icon: Icon(Icons.schedule, color: Colors.red),
+                          onPressed: () => _showRescheduleDialog(context, todo),
+                          tooltip: 'Reschedule Task',
                         ),
-                        child: Transform.scale(
-                          scale: 1.2,
-                          child: Checkbox(
-                            value: todo.isCompleted,
-                            onChanged: (bool? newValue) =>
-                                handleMainTaskStatusChange(newValue, setState),
-                            activeColor:
-                                isOverdue ? Colors.red : currentCategoryColor,
-                            shape: const CircleBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      isOverdue
+                          ? SizedBox.shrink() // No checkbox for overdue tasks
+                          : Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: currentCategoryColor.withOpacity(0.1),
+                              ),
+                              child: Transform.scale(
+                                scale: 1.2,
+                                child: Checkbox(
+                                  value: todo.isCompleted,
+                                  onChanged: (bool? newValue) =>
+                                      handleMainTaskStatusChange(
+                                          newValue, setState),
+                                  activeColor: currentCategoryColor,
+                                  shape: const CircleBorder(),
+                                ),
+                              ),
+                            ),
 
                       // Task content
                       Expanded(
@@ -1455,7 +1471,6 @@ class _TodoListState extends State<TodoList> {
     if (selectedDate.isBefore(today)) {
       selectedDate = today;
     }
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1463,7 +1478,7 @@ class _TodoListState extends State<TodoList> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           return Container(
-            height: MediaQuery.of(context).size.height * 0.5,
+            height: MediaQuery.of(context).size.height * 0.45,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -1572,61 +1587,56 @@ class _TodoListState extends State<TodoList> {
                           Expanded(
                             child: ElevatedButton(
                               onPressed: () async {
-                                // Convert selected time to DateTime for comparison
                                 final now = DateTime.now();
-                                final selectedDateTime = selectedTime != null
-                                    ? DateTime(
-                                        selectedDate.year,
-                                        selectedDate.month,
-                                        selectedDate.day,
-                                        selectedTime!.hour,
-                                        selectedTime!.minute,
-                                      )
-                                    : selectedDate;
+                                final selectedDateTime = DateTime(
+                                  selectedDate.year,
+                                  selectedDate.month,
+                                  selectedDate.day,
+                                  selectedTime?.hour ?? now.hour,
+                                  selectedTime?.minute ?? now.minute,
+                                );
 
-                                // Check if selected datetime is in the future
-                                if (selectedDateTime.isBefore(now)) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Please select a future date and time',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          color: Colors.white,
+                                // New validation logic
+                                if (selectedDateTime.isAfter(now)) {
+                                  try {
+                                    await FirebaseTaskService
+                                        .updateRescheduleScheduledTask(
+                                      todo.id,
+                                      selectedDate,
+                                      selectedTime,
+                                    );
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Task rescheduled successfully',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            color: Colors.white,
+                                          ),
                                         ),
+                                        backgroundColor: Colors.green,
                                       ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                try {
-                                  // Update both date and time
-                                  await FirebaseTaskService
-                                      .updateRescheduleScheduledTask(
-                                    todo.id,
-                                    selectedDate,
-                                    selectedTime,
-                                  );
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Task rescheduled successfully',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          color: Colors.white,
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Failed to reschedule task',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            color: Colors.white,
+                                          ),
                                         ),
+                                        backgroundColor: Colors.red,
                                       ),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                } catch (e) {
+                                    );
+                                  }
+                                } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
-                                        'Failed to reschedule task',
+                                        'Please select a future date or time',
                                         style: GoogleFonts.inter(
                                           fontSize: 14,
                                           color: Colors.white,
@@ -1642,9 +1652,9 @@ class _TodoListState extends State<TodoList> {
                                 child: Text(
                                   'Reschedule',
                                   style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white),
                                 ),
                               ),
                               style: ElevatedButton.styleFrom(
