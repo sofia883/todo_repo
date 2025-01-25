@@ -60,7 +60,6 @@ class _TodoListState extends State<TodoList> {
       if (!todo.isCompleted && dueDateTime.isBefore(now) && !todo.isOverdue) {
         todo.isOverdue = true;
         needsUpdate = true;
-        await _notificationService.scheduleTodoNotification(todo);
       }
     }
 
@@ -417,64 +416,52 @@ class _TodoListState extends State<TodoList> {
     }
 
     Future<void> handleDelete(TodoItem todo) async {
+      // Temporarily hold the deleted task in case of undo
       final deletedTodo = todo;
+      final originalIndex = todos.indexOf(todo);
 
-      try {
-        await FirebaseTaskService.deleteScheduledTask(todo.id);
+      setState(() {
+        todos.remove(todo); // Optimistically remove the task
+      });
 
-        if (!context.mounted) return;
+      // Show SnackBar for Undo
+      final undoSnackBar = ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Task deleted'),
+          action: SnackBarAction(
+            label: 'UNDO',
+            onPressed: () {
+              setState(() {
+                todos.insert(
+                    originalIndex, deletedTodo); // Restore task locally
+              });
+            },
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Task deleted'),
-            action: SnackBarAction(
-              label: 'UNDO',
-              onPressed: () async {
-                try {
-                  setState(() {
-                    todos.add(deletedTodo);
-                  });
+      // Wait for SnackBar duration to complete
+      await undoSnackBar.closed;
 
-                  await FirebaseTaskService.addScheduledTask(deletedTodo);
+      // Check if task was restored
+      if (!todos.contains(deletedTodo)) {
+        try {
+          // Task wasn't restored, delete it from backend
+          await FirebaseTaskService.deleteScheduledTask(todo.id);
+        } catch (e) {
+          // Handle failure to delete online
+          setState(() {
+            todos.insert(originalIndex, deletedTodo); // Restore task on error
+          });
 
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Task restored'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                } catch (e) {
-                  setState(() {
-                    todos.remove(deletedTodo);
-                  });
-
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Failed to restore task'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to delete task. Restoring it.'),
+              backgroundColor: Colors.red,
             ),
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      } catch (e) {
-        // If deletion fails, restore the item to UI
-        setState(() {
-          todos.add(deletedTodo);
-        });
-
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to delete task'),
-            backgroundColor: Colors.red,
-          ),
-        );
+          );
+        }
       }
     }
 
