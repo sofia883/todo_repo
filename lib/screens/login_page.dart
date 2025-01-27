@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -39,8 +41,27 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  void _skipLogin() {
-    Navigator.pushNamedAndRemoveUntil(context, '/welcome', (route) => false);
+  Future<void> _skipLogin() async {
+    try {
+      // Generate a unique guest ID
+      final guestId = 'guest_${const Uuid().v4()}';
+
+      // Save guest ID to shared preferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('guest_user_id', guestId);
+
+      print('Created guest user with ID: $guestId');
+
+      // Navigate to home screen
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/home');
+    } catch (e) {
+      print('Error in skip login: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create guest session: $e')),
+      );
+    }
   }
 
   @override
@@ -209,7 +230,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     TextButton(
                       onPressed: _skipLogin,
-                      child: Text(
+                      child: const Text(
                         'Skip Login',
                         style: TextStyle(
                           color: Colors.white70,

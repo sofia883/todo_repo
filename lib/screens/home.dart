@@ -41,7 +41,47 @@ class _TodoListState extends State<TodoList> {
 
   List<TodoItem> _currentTasks = [];
   bool isQuickAddMode = false;
+  Future<bool> _checkIfShownAgain() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('hasShownUnauthenticatedWarning') ?? false;
+  }
+
+  Future<void> _setDontShowAgain() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hasShownUnauthenticatedWarning', true);
+  }
+
+  void _handleDontShowAgain(BuildContext context) async {
+    await _setDontShowAgain();
+    Navigator.pop(context); // Close the snack bar or the page
+  }
+
 // Update the timer check method
+  bool _hasShownUnauthenticatedWarning = false;
+
+  void _showUnauthenticatedWarning(BuildContext context) {
+    if (_hasShownUnauthenticatedWarning)
+      return; // Don't show again if flag is set
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'User not authenticated. Task saved locally.',
+          style: GoogleFonts.inter(),
+        ),
+        backgroundColor: Colors.orange,
+        action: SnackBarAction(
+          label: 'Login Now',
+          onPressed: () {
+            // Navigate to the login page
+            Navigator.pushReplacementNamed(context, '/login');
+          },
+          textColor: Colors.white,
+        ),
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
 
   void _checkAndUpdateTasksStatus() async {
     final now = DateTime.now();
@@ -115,6 +155,15 @@ class _TodoListState extends State<TodoList> {
   @override
   void initState() {
     super.initState();
+    try {
+      // Add null checks before accessing streams
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // Initialize streams here
+      }
+    } catch (e) {
+      print('Initialization error: $e');
+    }
     // _notificationService.initialize();
     FirebaseTaskService.getQuickTasksStream();
     _startOverdueTimer();
@@ -416,52 +465,64 @@ class _TodoListState extends State<TodoList> {
     }
 
     Future<void> handleDelete(TodoItem todo) async {
-      // Temporarily hold the deleted task in case of undo
       final deletedTodo = todo;
-      final originalIndex = todos.indexOf(todo);
 
-      setState(() {
-        todos.remove(todo); // Optimistically remove the task
-      });
+      try {
+        await FirebaseTaskService.deleteScheduledTask(todo.id);
 
-      // Show SnackBar for Undo
-      final undoSnackBar = ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Task deleted'),
-          action: SnackBarAction(
-            label: 'UNDO',
-            onPressed: () {
-              setState(() {
-                todos.insert(
-                    originalIndex, deletedTodo); // Restore task locally
-              });
-            },
-          ),
-          duration: const Duration(seconds: 5),
-        ),
-      );
+        if (!context.mounted) return;
 
-      // Wait for SnackBar duration to complete
-      await undoSnackBar.closed;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Task deleted'),
+            action: SnackBarAction(
+              label: 'UNDO',
+              onPressed: () async {
+                try {
+                  setState(() {
+                    todos.add(deletedTodo);
+                  });
 
-      // Check if task was restored
-      if (!todos.contains(deletedTodo)) {
-        try {
-          // Task wasn't restored, delete it from backend
-          await FirebaseTaskService.deleteScheduledTask(todo.id);
-        } catch (e) {
-          // Handle failure to delete online
-          setState(() {
-            todos.insert(originalIndex, deletedTodo); // Restore task on error
-          });
+                  await FirebaseTaskService.addScheduledTask(deletedTodo);
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to delete task. Restoring it.'),
-              backgroundColor: Colors.red,
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Task restored'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  setState(() {
+                    todos.remove(deletedTodo);
+                  });
+
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to restore task'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
             ),
-          );
-        }
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      } catch (e) {
+        // If deletion fails, restore the item to UI
+        setState(() {
+          todos.add(deletedTodo);
+        });
+
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete task'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
 
@@ -838,6 +899,7 @@ class _TodoListState extends State<TodoList> {
           ),
           confirmDismiss: (direction) async {
             return await showDialog<bool>(
+                  // Confirm before deleting
                   context: context,
                   builder: (context) => AlertDialog(
                     title: const Text('Delete Task'),
@@ -860,40 +922,52 @@ class _TodoListState extends State<TodoList> {
           },
           onDismissed: (direction) async {
             try {
+              // Delete the task from the database
               await FirebaseTaskService.deleteQuickTask(task.id);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Task deleted'),
-                  action: SnackBarAction(
-                    label: 'UNDO',
-                    onPressed: () async {
-                      try {
-                        await FirebaseTaskService.addQuickTask(task);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Task restored'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Failed to restore task'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    },
+
+              // Show the SnackBar with undo option if widget is still mounted
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Task deleted'),
+                    action: SnackBarAction(
+                      label: 'UNDO',
+                      onPressed: () async {
+                        try {
+                          // If undo is pressed, restore the task
+                          await FirebaseTaskService.addQuickTask(task);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Task restored'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to restore task'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Failed to delete task'),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to delete task'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
             }
           },
           child: Card(
@@ -1453,6 +1527,8 @@ class _TodoListState extends State<TodoList> {
     // Get current date and time
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+
+    // Ensure initialDate is not before today
 
     showModalBottomSheet(
       context: context,
@@ -2079,9 +2155,7 @@ class _TodoListState extends State<TodoList> {
                             ),
                           ],
                         ),
-
                         SizedBox(height: 16),
-
                         Container(
                           decoration: BoxDecoration(
                             border: Border.all(color: Colors.grey[300]!),
@@ -2319,7 +2393,6 @@ class _TodoListState extends State<TodoList> {
                         ),
 
                         SizedBox(height: 24),
-
                         ElevatedButton(
                           onPressed: () async {
                             // Validate title with more detailed error handling
@@ -2339,15 +2412,8 @@ class _TodoListState extends State<TodoList> {
                             });
 
                             try {
-                              // Check network connectivity
-                              final connectivityResult =
-                                  await Connectivity().checkConnectivity();
-                              final isOffline =
-                                  connectivityResult == ConnectivityResult.none;
-
                               // Check user authentication
-                              final currentUser =
-                                  FirebaseAuth.instance.currentUser;
+
                               final uuid = Uuid();
 
                               List<SubTask> subtasks = subtaskControllers
@@ -2361,6 +2427,10 @@ class _TodoListState extends State<TodoList> {
 
                               final newTodo = TodoItem(
                                 id: uuid.v4(),
+                                userId: FirebaseAuth
+                                        .instance.currentUser?.uid ??
+                                    'guest_user', // Use authenticated user ID or fallback to 'guest_user'
+
                                 title: titleController.text.trim(),
                                 description: "",
                                 createdAt: DateTime.now(),
@@ -2368,30 +2438,25 @@ class _TodoListState extends State<TodoList> {
                                 dueTime: selectedDueTime,
                                 subtasks: subtasks,
                               );
-
-                              // Close bottom sheet immediately
-                              Navigator.of(context).pop();
-
-                              // Simulate brief loading
                               await Future.delayed(const Duration(seconds: 2));
 
-                              // Show offline sync message if offline
-                              if (isOffline) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Task saved locally. Sign in to sync across devices.',
-                                      style: GoogleFonts.inter(),
-                                    ),
-                                    backgroundColor: Colors.orange,
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-
-                              // Add task locally and attempt remote sync
+                              // Close the bottom sheet after successful task addition
+                              Navigator.of(context).pop();
+                              // Add the task locally first, whether the user is authenticated or not
                               await FirebaseTaskService.addScheduledTask(
                                   newTodo);
+                              final user = FirebaseAuth.instance.currentUser;
+                              if (user == null) {
+                                // Check SharedPreferences for "Don't show again" preference
+                                _hasShownUnauthenticatedWarning =
+                                    await _checkIfShownAgain();
+
+                                if (!_hasShownUnauthenticatedWarning) {
+                                  _showUnauthenticatedWarning(context);
+                                }
+                                return; // Stop further execution if not authenticated
+                              }
+                              // Simulate loading by waiting for 2 seconds
                             } catch (e) {
                               // Optional: handle any unexpected errors
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -2427,7 +2492,7 @@ class _TodoListState extends State<TodoList> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: currentCategoryColor,
                           ),
-                        ),
+                        )
                       ],
                     ),
                   ),
@@ -2478,6 +2543,8 @@ class _TodoListState extends State<TodoList> {
     final subtaskController = TextEditingController();
     final List<QuickSubTask> subtasks = [];
     bool isLoading = false;
+    bool hasShownSignInMessage =
+        false; // Flag to track if message has been shown
 
     void addSubtask() {
       if (subtaskController.text.trim().isNotEmpty) {
@@ -2660,6 +2727,8 @@ class _TodoListState extends State<TodoList> {
                         onPressed: isLoading
                             ? null
                             : () async {
+                                final user = FirebaseAuth.instance.currentUser;
+
                                 if (taskTitleController.text.trim().isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
@@ -2682,47 +2751,45 @@ class _TodoListState extends State<TodoList> {
                                 });
 
                                 // Simulate loading for 2 seconds
-                                await Future.delayed(
-                                    const Duration(seconds: 2));
 
                                 try {
                                   // Check network connectivity
-                                  final connectivityResult =
-                                      await Connectivity().checkConnectivity();
-                                  final isOffline = connectivityResult ==
-                                      ConnectivityResult.none;
 
                                   final newTask = QuickTask(
                                     id: DateTime.now()
                                         .millisecondsSinceEpoch
                                         .toString(),
+                                    userId: FirebaseAuth
+                                            .instance.currentUser?.uid ??
+                                        'guest_user', // Use authenticated user ID or fallback to 'guest_user'
+
                                     title: taskTitleController.text.trim(),
                                     createdAt: DateTime.now(),
                                     subtasks: List.from(subtasks),
                                   );
+                                  await Future.delayed(
+                                      const Duration(seconds: 2));
 
+                                  // Close the bottom sheet after successful task addition
+                                  Navigator.of(context).pop();
                                   await FirebaseTaskService.addQuickTask(
                                       newTask);
-                                  onTaskAdded(newTask);
-
-                                  // Show offline sync message if offline
-                                  if (isOffline) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Task saved locally. Sync when online.',
-                                        ),
-                                        backgroundColor: Colors.orange,
-                                        duration: Duration(seconds: 2),
-                                      ),
-                                    );
-                                  }
-
-                                  Navigator.pop(context);
                                 } finally {
                                   setState(() {
                                     isLoading = false;
                                   });
+                                }
+                                // Check network connectivity
+
+                                if (user == null) {
+                                  // Check SharedPreferences for "Don't show again" preference
+                                  _hasShownUnauthenticatedWarning =
+                                      await _checkIfShownAgain();
+
+                                  if (!_hasShownUnauthenticatedWarning) {
+                                    _showUnauthenticatedWarning(context);
+                                  }
+                                  return; // Stop further execution if not authenticated
                                 }
                               },
                         child: isLoading

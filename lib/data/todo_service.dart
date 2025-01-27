@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:to_do_app/data/todo_notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:uuid/uuid.dart';
 
 // Stream<User?> get authStateChanges => _auth.authStateChanges();
 
@@ -48,21 +49,25 @@ class TodoListData {
 
 class TodoItem {
   final String id;
+  final String userId; // Added userId field
+
   final String title;
   final String description;
   final DateTime createdAt;
   final DateTime dueDate;
   final TimeOfDay? dueTime;
+
   bool isSubtasksExpanded = false;
   bool isOverdue = false;
-  final bool isQuickTask; // New field
+  final bool isQuickTask; // Added isQuickTask field
   bool isCompleted;
 
   DateTime? completedAt;
-  List<SubTask> subtasks; // Add this field
+  List<SubTask> subtasks; // Added subtasks field
 
   TodoItem({
     required this.id,
+    required this.userId, // Initialize userId
     required this.title,
     required this.description,
     required this.createdAt,
@@ -70,14 +75,15 @@ class TodoItem {
     this.dueTime,
     this.isCompleted = false,
     this.isQuickTask = false, // Default to false
-
     this.completedAt,
-    this.subtasks = const [], // Initialize empty subtasks list
+    this.subtasks = const [], // Default empty list for subtasks
   });
 
+  /// Convert a `TodoItem` instance to a JSON map
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'userId': userId,
       'title': title,
       'description': description,
       'createdAt': createdAt.toIso8601String(),
@@ -86,14 +92,17 @@ class TodoItem {
           ? {'hour': dueTime!.hour, 'minute': dueTime!.minute}
           : null,
       'isCompleted': isCompleted,
+      'isQuickTask': isQuickTask,
       'completedAt': completedAt?.toIso8601String(),
       'subtasks': subtasks.map((subtask) => subtask.toJson()).toList(),
     };
   }
 
+  /// Create a `TodoItem` instance from a JSON map
   factory TodoItem.fromJson(Map<String, dynamic> json) {
     return TodoItem(
       id: json['id'],
+      userId: json['userId'] ?? '', // Parse userId or use an empty string
       title: json['title'],
       description: json['description'],
       createdAt: DateTime.parse(json['createdAt']),
@@ -104,7 +113,8 @@ class TodoItem {
               minute: json['dueTime']['minute'],
             )
           : null,
-      isCompleted: json['isCompleted'],
+      isCompleted: json['isCompleted'] ?? false,
+      isQuickTask: json['isQuickTask'] ?? false,
       completedAt: json['completedAt'] != null
           ? DateTime.parse(json['completedAt'])
           : null,
@@ -113,6 +123,41 @@ class TodoItem {
               .toList() ??
           [],
     );
+  }
+
+  /// Create a copy of the current `TodoItem` with optional updated fields
+  TodoItem copyWith({
+    String? id,
+    String? userId,
+    String? title,
+    String? description,
+    DateTime? createdAt,
+    DateTime? dueDate,
+    TimeOfDay? dueTime,
+    bool? isCompleted,
+    bool? isQuickTask,
+    DateTime? completedAt,
+    List<SubTask>? subtasks,
+  }) {
+    return TodoItem(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      createdAt: createdAt ?? this.createdAt,
+      dueDate: dueDate ?? this.dueDate,
+      dueTime: dueTime ?? this.dueTime,
+      isCompleted: isCompleted ?? this.isCompleted,
+      isQuickTask: isQuickTask ?? this.isQuickTask,
+      completedAt: completedAt ?? this.completedAt,
+      subtasks: subtasks ?? this.subtasks,
+    );
+  }
+
+  /// Check if the task is overdue
+  bool get checkOverdue {
+    final now = DateTime.now();
+    return dueDate.isBefore(now) && !isCompleted;
   }
 }
 
@@ -193,6 +238,7 @@ class QuickSubTask {
 
 class QuickTask {
   final String id;
+  final String userId; // Add the userId field
   final String title;
   final DateTime createdAt;
   final List<QuickSubTask> subtasks;
@@ -200,6 +246,7 @@ class QuickTask {
 
   QuickTask({
     required this.id,
+    required this.userId,
     required this.title,
     required this.createdAt,
     required this.subtasks,
@@ -209,6 +256,7 @@ class QuickTask {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'userId': userId,
       'title': title,
       'createdAt': createdAt.toIso8601String(),
       'subtasks': subtasks.map((subtask) => subtask.toJson()).toList(),
@@ -219,6 +267,7 @@ class QuickTask {
   factory QuickTask.fromJson(Map<String, dynamic> json) {
     return QuickTask(
       id: json['id'],
+      userId: json['userId'] ?? '',
       title: json['title'],
       createdAt: DateTime.parse(json['createdAt']),
       subtasks: (json['subtasks'] as List)
@@ -230,6 +279,7 @@ class QuickTask {
 
   QuickTask copyWith({
     String? id,
+    String? userId,
     String? title,
     DateTime? createdAt,
     List<QuickSubTask>? subtasks,
@@ -237,6 +287,7 @@ class QuickTask {
   }) {
     return QuickTask(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       title: title ?? this.title,
       createdAt: createdAt ?? this.createdAt,
       subtasks: subtasks ?? this.subtasks,
@@ -415,85 +466,108 @@ class _QuickTaskItemState extends State<QuickTaskItem> {
 class FirebaseTaskService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-
   static bool _isOnline = true;
 
-  // Initialize offline persistence
+  // Connectivity subscription
+  static late StreamSubscription<ConnectivityResult> _connectivitySubscription;
+
+  // Get the current user ID
+  static String get _userId {
+    return _auth.currentUser?.uid ?? 'guest_user';
+  }
+
+  // Initialize offline storage
   static Future<void> initializeOfflineStorage() async {
     await _firestore.enablePersistence();
     await LocalStorageService.init();
 
-    // Listen to connectivity changes
-    Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
-          _isOnline = result != ConnectivityResult.none;
-        } as void Function(List<ConnectivityResult> event)?);
+    _connectivitySubscription = Connectivity()
+            .onConnectivityChanged
+            .listen((ConnectivityResult result) {
+              _isOnline = result != ConnectivityResult.none;
+              if (_isOnline) {
+                syncWithServer(); // Sync data when the network becomes available
+              }
+            } as void Function(List<ConnectivityResult> event)?)
+        as StreamSubscription<ConnectivityResult>;
   }
 
-  // Modified addScheduledTask with offline support
+  // Dispose connectivity subscription
+  static Future<void> dispose() async {
+    await _connectivitySubscription.cancel();
+  }
+
+  // Add scheduled task with user ID
   static Future<void> addScheduledTask(TodoItem task) async {
+    final taskWithUserId = task.copyWith(userId: _userId);
+
     try {
       if (_isOnline) {
-        await _scheduledTasksRef.doc(task.id).set(task.toJson());
+        await _scheduledTasksRef.doc(task.id).set(taskWithUserId.toJson());
       }
-
-      // Save to local storage regardless of online status
       final localTasks = LocalStorageService.getScheduledTasks();
-      localTasks.add(task);
+      localTasks.add(taskWithUserId);
       await LocalStorageService.saveScheduledTasks(localTasks);
     } catch (e) {
-      // If Firebase operation fails, ensure local storage is updated
+      // Save locally on failure
       final localTasks = LocalStorageService.getScheduledTasks();
-      localTasks.add(task);
+      localTasks.add(taskWithUserId);
       await LocalStorageService.saveScheduledTasks(localTasks);
     }
   }
 
-  // Modified getScheduledTasksStream with offline support
   static Stream<List<TodoItem>> getScheduledTasksStream() {
     if (_isOnline) {
-      return _scheduledTasksRef.snapshots().map((snapshot) {
+      return _scheduledTasksRef
+          .where('userId', isEqualTo: _userId)
+          .snapshots()
+          .map((snapshot) {
         final tasks = snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
           data['id'] = doc.id;
           return TodoItem.fromJson(data);
         }).toList();
-
-        // Update local storage when online data is received
-        LocalStorageService.saveScheduledTasks(tasks);
+        LocalStorageService.saveScheduledTasks(
+            tasks); // Sync with local storage
         return tasks;
       });
     } else {
-      // Return stream from local storage when offline
-      return Stream.value(LocalStorageService.getScheduledTasks());
+      return Stream.value(
+          LocalStorageService.getScheduledTasks()); // Offline fallback
     }
   }
 
-  // Similar modifications for QuickTasks
+  // Add quick task with user ID
   static Future<void> addQuickTask(QuickTask task) async {
+    final taskWithUserId = task.copyWith(userId: _userId);
+
     try {
       if (_isOnline) {
-        await _quickTasksRef.doc(task.id).set(task.toJson());
+        await _quickTasksRef.doc(task.id).set(taskWithUserId.toJson());
       }
-
       final localTasks = LocalStorageService.getQuickTasks();
-      localTasks.add(task);
+      localTasks.add(taskWithUserId);
       await LocalStorageService.saveQuickTasks(localTasks);
     } catch (e) {
+      // Save locally on failure
       final localTasks = LocalStorageService.getQuickTasks();
-      localTasks.add(task);
+      localTasks.add(taskWithUserId);
       await LocalStorageService.saveQuickTasks(localTasks);
     }
   }
 
+  // Stream quick tasks
   static Stream<List<QuickTask>> getQuickTasksStream() {
     if (_isOnline) {
-      return _quickTasksRef.snapshots().map((snapshot) {
+      return _quickTasksRef
+          .where('userId', isEqualTo: _userId)
+          .snapshots()
+          .map((snapshot) {
         final tasks = snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
           data['id'] = doc.id;
           return QuickTask.fromJson(data);
         }).toList();
-
         LocalStorageService.saveQuickTasks(tasks);
         return tasks;
       });
@@ -502,7 +576,7 @@ class FirebaseTaskService {
     }
   }
 
-  // Add sync method to synchronize local and remote data
+  // Sync with server
   static Future<void> syncWithServer() async {
     if (!_isOnline) return;
 
@@ -510,61 +584,27 @@ class FirebaseTaskService {
       // Sync scheduled tasks
       final localScheduledTasks = LocalStorageService.getScheduledTasks();
       for (var task in localScheduledTasks) {
-        await _scheduledTasksRef.doc(task.id).set(task.toJson());
+        final taskWithUserId = task.copyWith(userId: _userId);
+        await _scheduledTasksRef.doc(task.id).set(taskWithUserId.toJson());
       }
 
       // Sync quick tasks
       final localQuickTasks = LocalStorageService.getQuickTasks();
       for (var task in localQuickTasks) {
-        await _quickTasksRef.doc(task.id).set(task.toJson());
+        final taskWithUserId = task.copyWith(userId: _userId);
+        await _quickTasksRef.doc(task.id).set(taskWithUserId.toJson());
       }
     } catch (e) {
       print('Sync failed: $e');
     }
   }
 
-  // Get current user ID
-  static String get _userId => _auth.currentUser?.uid ?? '';
-
-  // Reference to user's scheduled tasks collection
-  static CollectionReference get _scheduledTasksRef =>
-      _firestore.collection('users').doc(_userId).collection('scheduled_tasks');
-
-  // Reference to user's quick tasks collection
-  static CollectionReference get _quickTasksRef =>
-      _firestore.collection('users').doc(_userId).collection('quick_tasks');
-
-  static Future<void> updateScheduledTask(TodoItem task) async {
-    await _scheduledTasksRef.doc(task.id).update(task.toJson());
-  }
-
-  static Future<void> deleteScheduledTask(String taskId) async {
-    await _scheduledTasksRef.doc(taskId).delete();
-  }
-
-  static Future<void> updateScheduledTaskStatus(
-      String taskId, bool isCompleted) async {
-    await _scheduledTasksRef.doc(taskId).update({
-      'isCompleted': isCompleted,
-      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
-    });
-  }
-
-  static Future<void> updateQuickTask(QuickTask task) async {
-    await _quickTasksRef.doc(task.id).update(task.toJson());
-  }
-
-  static Future<void> deleteQuickTask(String taskId) async {
-    await _quickTasksRef.doc(taskId).delete();
-  }
-
   static Future<void> updateQuickTaskCompletion(
-    String taskId,
-    bool isCompleted,
-  ) async {
+      String taskId, bool isCompleted) async {
     await _quickTasksRef.doc(taskId).update({
       'isCompleted': isCompleted,
       'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+      'userId': _userId, // Ensure userId is included
     });
   }
 
@@ -592,7 +632,10 @@ class FirebaseTaskService {
   }
 
   static Future<void> updateRescheduleScheduledTask(
-      String taskId, DateTime newDate, TimeOfDay? newTime) async {
+    String taskId,
+    DateTime newDate,
+    TimeOfDay? newTime,
+  ) async {
     try {
       // Create a map of fields to update
       Map<String, dynamic> updateData = {
@@ -603,52 +646,187 @@ class FirebaseTaskService {
       if (newTime != null) {
         updateData['dueTime'] = {
           'hour': newTime.hour,
-          'minute': newTime.minute
+          'minute': newTime.minute,
         };
       }
 
+      // Update the task in Firestore
       await _scheduledTasksRef.doc(taskId).update(updateData);
     } catch (e) {
       throw Exception('Failed to update task: $e');
     }
   }
+
+  static Future<void> updateQuickTask(QuickTask task) async {
+    try {
+      await _quickTasksRef.doc(task.id).update(task.toJson());
+    } catch (e) {
+      throw Exception('Failed to update quick task: $e');
+    }
+  }
+
+  static Future<void> deleteQuickTask(String taskId) async {
+    try {
+      await _quickTasksRef.doc(taskId).delete();
+    } catch (e) {
+      throw Exception('Failed to delete quick task: $e');
+    }
+  }
+
+  static Future<void> updateScheduledTask(TodoItem task) async {
+    try {
+      await _scheduledTasksRef.doc(task.id).update(task.toJson());
+    } catch (e) {
+      throw Exception('Failed to update scheduled task: $e');
+    }
+  }
+
+  static Future<void> deleteScheduledTask(String taskId) async {
+    try {
+      await _scheduledTasksRef.doc(taskId).delete();
+    } catch (e) {
+      throw Exception('Failed to delete scheduled task: $e');
+    }
+  }
+
+  // Delete local data on logout
+  static Future<void> logoutAndClearLocalData() async {
+    try {
+      await _auth.signOut(); // Log out the user
+      await LocalStorageService.clear(); // Clear only local data on the device
+    } catch (e) {
+      print('Error during logout: $e');
+    }
+  }
+
+  static Future<void> deleteUserDataAndAccount() async {
+    try {
+      // Get the current user
+      final currentUser = _auth.currentUser;
+
+      if (currentUser == null) {
+        throw Exception('No authenticated user found.');
+      }
+
+      final userId = currentUser.uid;
+
+      // Step 1: Delete Firestore data for the user
+      // Firebase collections for the user
+      final scheduledTasksRef = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('scheduled_tasks');
+      final quickTasksRef =
+          _firestore.collection('users').doc(userId).collection('quick_tasks');
+
+      // Delete all scheduled tasks in Firestore
+      final scheduledTasksQuery = await scheduledTasksRef.get();
+      for (var doc in scheduledTasksQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Delete all quick tasks in Firestore
+      final quickTasksQuery = await quickTasksRef.get();
+      for (var doc in quickTasksQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Delete the user's main Firestore document (if exists)
+      final userDocRef = _firestore.collection('users').doc(userId);
+      await userDocRef.delete();
+
+      // Step 2: Delete the user from Firebase Authentication
+      await currentUser.delete();
+
+      // Step 3: Clear local data
+      await LocalStorageService.clear();
+
+      print('User and all associated data deleted successfully.');
+    } catch (e) {
+      print('Failed to delete user data and account: $e');
+      throw Exception('Failed to delete user data and account: $e');
+    }
+  }
+
+  // Firebase references
+  static CollectionReference get _scheduledTasksRef =>
+      _firestore.collection('users').doc(_userId).collection('scheduled_tasks');
+
+  static CollectionReference get _quickTasksRef =>
+      _firestore.collection('users').doc(_userId).collection('quick_tasks');
 }
 
 class LocalStorageService {
   static const String SCHEDULED_TASKS_KEY = 'scheduled_tasks';
   static const String QUICK_TASKS_KEY = 'quick_tasks';
   static late SharedPreferences _prefs;
+  static const String LOCAL_USER_ID_KEY = 'local_user_id';
+
+  // Get current user ID
+  static Future<String> getCurrentUserId() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      return currentUser.uid; // Authenticated user ID
+    }
+
+    // Generate unique local ID for guest users
+    String? localUserId = _prefs.getString(LOCAL_USER_ID_KEY);
+    if (localUserId == null) {
+      localUserId = const Uuid().v4();
+      await _prefs.setString(LOCAL_USER_ID_KEY, localUserId);
+    }
+    return localUserId;
+  }
 
   // Initialize shared preferences
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
   }
 
-  // Save tasks locally
+  // Save scheduled tasks
   static Future<void> saveScheduledTasks(List<TodoItem> tasks) async {
+    final key = '${SCHEDULED_TASKS_KEY}_${await getCurrentUserId()}';
     final tasksJson = tasks.map((task) => task.toJson()).toList();
-    await _prefs.setString(SCHEDULED_TASKS_KEY, jsonEncode(tasksJson));
+    await _prefs.setString(key, jsonEncode(tasksJson));
   }
 
-  static Future<void> saveQuickTasks(List<QuickTask> tasks) async {
-    final tasksJson = tasks.map((task) => task.toJson()).toList();
-    await _prefs.setString(QUICK_TASKS_KEY, jsonEncode(tasksJson));
-  }
-
-  // Get tasks from local storage
+  // Get scheduled tasks
   static List<TodoItem> getScheduledTasks() {
-    final tasksString = _prefs.getString(SCHEDULED_TASKS_KEY);
+    final userId = _prefs.getString(LOCAL_USER_ID_KEY) ?? '';
+    final key = '${SCHEDULED_TASKS_KEY}_$userId';
+    final tasksString = _prefs.getString(key);
     if (tasksString == null) return [];
-
     final tasksList = jsonDecode(tasksString) as List;
     return tasksList.map((task) => TodoItem.fromJson(task)).toList();
   }
 
-  static List<QuickTask> getQuickTasks() {
-    final tasksString = _prefs.getString(QUICK_TASKS_KEY);
-    if (tasksString == null) return [];
+  // Save quick tasks
+  static Future<void> saveQuickTasks(List<QuickTask> tasks) async {
+    final key = '${QUICK_TASKS_KEY}_${await getCurrentUserId()}';
+    final tasksJson = tasks.map((task) => task.toJson()).toList();
+    await _prefs.setString(key, jsonEncode(tasksJson));
+  }
 
+  // Get quick tasks
+  static List<QuickTask> getQuickTasks() {
+    final userId = _prefs.getString(LOCAL_USER_ID_KEY) ?? '';
+    final key = '${QUICK_TASKS_KEY}_$userId';
+    final tasksString = _prefs.getString(key);
+    if (tasksString == null) return [];
     final tasksList = jsonDecode(tasksString) as List;
     return tasksList.map((task) => QuickTask.fromJson(task)).toList();
+  }
+
+  static Future<void> clear() async {
+    final userId = _prefs.getString(LOCAL_USER_ID_KEY) ?? '';
+    final scheduledTasksKey = '${SCHEDULED_TASKS_KEY}_$userId';
+    final quickTasksKey = '${QUICK_TASKS_KEY}_$userId';
+
+    // Remove data for guest user
+    await _prefs.remove(scheduledTasksKey);
+    await _prefs.remove(quickTasksKey);
+
+    // Optionally, clear the local user ID if desired
+    await _prefs.remove(LOCAL_USER_ID_KEY);
   }
 }

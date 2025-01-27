@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
-import 'package:percent_indicator/circular_percent_indicator.dart';
 import 'package:to_do_app/data/todo_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:to_do_app/screens/home.dart';
 
 class ProfilePage extends StatefulWidget {
-  final List<TodoItem> todos;
+  List<TodoItem> todos = []; // The list of tasks
   ProfilePage({Key? key, required this.todos}) : super(key: key);
 
   @override
@@ -21,8 +21,9 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   bool _isEditingName = false;
-  bool _isEditingEmail = false;
 
+  // Get the updated tasks after deletion
+  List<TodoItem> updatedTasks = LocalStorageService.getScheduledTasks();
   @override
   void initState() {
     super.initState();
@@ -124,14 +125,10 @@ class _ProfilePageState extends State<ProfilePage> {
             return Center(child: CircularProgressIndicator());
           }
 
-          final todos = snapshot.data ?? [];
-          final completedTasks =
-              todos.where((todo) => todo.isCompleted).toList();
-          final pendingTasks = _getPendingTasks(todos);
-          final totalTasks = todos.length;
+          // Debug print to check if the stream has received updated data
+          print('Stream Data: ${snapshot.data}');
 
           return CustomScrollView(
-            // Modern Profile Header
             slivers: [
               SliverAppBar(
                 expandedHeight: 250.0,
@@ -153,6 +150,7 @@ class _ProfilePageState extends State<ProfilePage> {
               SliverToBoxAdapter(
                 child: _buildProgressSection(widget.todos),
               ),
+              SliverToBoxAdapter(child: _buildLogoutDeleteButtons())
             ],
           );
         },
@@ -292,53 +290,6 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
     );
-  }
-
-  Widget _buildNameWidget() {
-    return _isEditingName
-        ? Container(
-            width: 200,
-            child: TextField(
-              controller: _nameController,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-              textAlign: TextAlign.center,
-              decoration: InputDecoration(
-                border: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.white),
-                ),
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.check, color: Colors.white),
-                  onPressed: () => setState(() => _isEditingName = false),
-                ),
-              ),
-            ),
-          )
-        : GestureDetector(
-            onTap: () => setState(() => _isEditingName = true),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  _nameController.text,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Icon(
-                  Icons.edit,
-                  color: Colors.white.withOpacity(0.8),
-                  size: 20,
-                ),
-              ],
-            ),
-          );
   }
 
   Widget _buildProgressSection(List<TodoItem> todos) {
@@ -623,166 +574,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildStatItem(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        SizedBox(height: 5),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.white.withOpacity(0.8),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActivityCards(List<TodoItem> todos) {
-    final completedTasks = todos.where((todo) => todo.isCompleted).toList();
-    final pendingTasks = _getPendingTasks(todos);
-    final overdueTasks = _getOverdueTasks(todos);
-
-    return Container(
-      height: 160,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          _buildActivityCard(
-            'Completed',
-            completedTasks.length.toString(),
-            Icons.check_circle_outline,
-            Colors.green[700]!,
-            () => _showTaskDetailsBottomSheet('Completed', completedTasks),
-          ),
-          _buildActivityCard(
-            'Pending',
-            pendingTasks.length.toString(),
-            Icons.pending_actions,
-            Colors.orange[700]!,
-            () => _showTaskDetailsBottomSheet('Pending', pendingTasks),
-          ),
-          _buildActivityCard(
-            'Overdue',
-            overdueTasks.length.toString(),
-            Icons.warning_outlined,
-            Colors.red[700]!,
-            () => _showTaskDetailsBottomSheet('Overdue', overdueTasks),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivityCard(
-    String title,
-    String count,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return Container(
-      width: 160,
-      margin: EdgeInsets.only(right: 15),
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: EdgeInsets.all(15),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, color: color, size: 30),
-                ),
-                Spacer(),
-                Text(
-                  count,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-                SizedBox(height: 5),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentActivity(List<TodoItem> todos) {
-    final recentTodos = todos.where((todo) => !todo.isCompleted).toList()
-      ..sort((a, b) => b.dueDate.compareTo(a.dueDate));
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: NeverScrollableScrollPhysics(),
-        itemCount: recentTodos.take(5).length,
-        separatorBuilder: (context, index) => Divider(height: 1),
-        itemBuilder: (context, index) {
-          final todo = recentTodos[index];
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.blue[100],
-              child: Icon(Icons.list_alt, color: Colors.blue[600]),
-            ),
-            title: Text(
-              todo.title,
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            subtitle: Text(
-              'Due: ${DateFormat('MMM dd, yyyy').format(todo.dueDate)}',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-            trailing: Icon(Icons.chevron_right, color: Colors.grey),
-          );
-        },
-      ),
-    );
-  }
-
   // Helper methods for task filtering remain the same...
   List<TodoItem> _getOverdueTasks(List<TodoItem> todos) {
     return todos.where((task) => _isTaskOverdue(task)).toList();
@@ -808,5 +599,220 @@ class _ProfilePageState extends State<ProfilePage> {
                 !_isTaskOverdue(task) // Not overdue
             )
         .toList();
+  }
+
+// Your logout function
+  Widget _buildLogoutDeleteButtons() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Column(
+        children: [
+          if (currentUser != null) ...[
+            // Logout Button - Only shown if logged in
+            ElevatedButton(
+              onPressed: _showLogoutConfirmation,
+              child: Text("Logout"),
+              style: ElevatedButton.styleFrom(
+                iconColor: Colors.red,
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+              ),
+            ),
+            SizedBox(height: 10),
+
+            // Delete Account Button - Only shown if logged in
+            ElevatedButton(
+              onPressed: _showDeleteConfirmation,
+              child: Text("Delete Account"),
+              style: ElevatedButton.styleFrom(
+                iconColor: Colors.black,
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+              ),
+            ),
+          ] else ...[
+            // Option to delete current data - if not logged in
+            ElevatedButton(
+              onPressed: _showDeleteCurrentDataConfirmation,
+              child: Text("Delete Current Data"),
+              style: ElevatedButton.styleFrom(
+                iconColor: Colors.black,
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Show confirmation dialog for deleting local data
+  void _showDeleteCurrentDataConfirmation() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("Are you sure?"),
+          content: Text(
+              "This action will delete all tasks on this device, but not from Firebase."),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _deleteLocalData(); // Delete tasks from device
+              },
+              child: Text("Yes"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text("No"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Show confirmation dialog for logout
+  void _showLogoutConfirmation() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("Are you sure?"),
+          content: Text("Do you really want to logout?"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _logout(); // Call your logout function here
+              },
+              child: Text("Yes"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text("No"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Show confirmation dialog for deleting account
+  void _showDeleteConfirmation() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("Are you sure?"),
+          content: Text(
+              "This action is permanent. Do you want to delete your account? This will delete your account data from Firebase too."),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _deleteAccount(); // Call your delete account function here
+              },
+              child: Text("Yes"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text("No"),
+            ),
+          ],
+        );
+      },
+    );
+  } // Delete local tasks when logged out
+
+  void _deleteLocalData() async {
+    // Show the loading indicator for 2 seconds
+    _showLoadingIndicator();
+
+    // Delete user data and account from Firebase
+
+    await FirebaseTaskService.deleteUserDataAndAccount();
+
+    // Trigger a UI update with the new tasks list
+    setState(() {
+      // Update the state with the new list of tasks (empty in this case)
+      widget.todos = updatedTasks;
+    });
+
+    // Show a confirmation snack bar
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("All local tasks deleted successfully.")),
+    );
+  }
+
+// Logout function
+  void _logout() async {
+    _showLoadingIndicator();
+    // Perform logout action (Firebase sign out or similar)
+    await FirebaseAuth.instance.signOut();
+
+    // Clear tasks locally
+    FirebaseTaskService.logoutAndClearLocalData();
+
+    // Navigate to login page after logout
+    Navigator.pushNamed(context, '/login').then((_) {
+      // When coming back to this page, you can trigger a refresh if needed
+      setState(() {});
+    });
+  }
+
+// Delete account function
+  void _deleteAccount() async {
+    try {
+      // Show the loading indicator
+      _showLoadingIndicator();
+
+      // Perform account deletion
+      await FirebaseAuth.instance.currentUser?.delete();
+
+      // Clear tasks from local storage
+      await FirebaseTaskService.deleteUserDataAndAccount();
+
+      // Close the loading indicator
+      Navigator.of(context).pop();
+
+      // Navigate to the login page
+      Navigator.pushNamed(context, '/login').then((_) {
+        setState(() {});
+      });
+    } catch (e) {
+      // Close the loading indicator
+      Navigator.of(context).pop();
+
+      // Handle errors (e.g., show a message)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error deleting account: $e")),
+      );
+    }
+  }
+
+// Show loading indicator
+  void _showLoadingIndicator() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (BuildContext context) {
+        return Center(
+          child: CircularProgressIndicator(),
+        );
+      },
+    );
+
+    // Automatically dismiss the dialog after 2 seconds
+    Future.delayed(Duration(seconds: 2), () {
+      Navigator.of(context).pop(); // Dismiss the dialog
+    });
   }
 }

@@ -14,6 +14,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
+  await LocalStorageService.init(); // Make sure this method exists
+
   // Enable offline persistence
   FirebaseFirestore.instance.settings = Settings(
     persistenceEnabled: true,
@@ -22,7 +24,6 @@ void main() async {
   // Ensure Flutter bindings are initialized
 
   // Initialize notification service
-  await NotificationService().initialize();
 
   // Run the app
   runApp(MyApp());
