@@ -733,23 +733,40 @@ class _ProfilePageState extends State<ProfilePage> {
   } // Delete local tasks when logged out
 
   void _deleteLocalData() async {
-    // Show the loading indicator for 2 seconds
-    _showLoadingIndicator();
+    try {
+      // Show the loading indicator
+      _showLoadingIndicator();
 
-    // Delete user data and account from Firebase
+      // Delete all data from Firebase
+      await FirebaseTaskService.deleteAllData();
 
-    await FirebaseTaskService.deleteAllData();
+      // Update the local state with an empty list
 
-    // Trigger a UI update with the new tasks list
-    setState(() {
-      // Update the state with the new list of tasks (empty in this case)
-      widget.todos = updatedTasks;
-    });
+      // Close loading indicator after 2 seconds
+      await Future.delayed(Duration(seconds: 2));
+      setState(() {
+        widget.todos = []; // Set todos to empty list immediately
+      });
 
-    // Show a confirmation snack bar
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("All local tasks deleted successfully.")),
-    );
+      Navigator.of(context, rootNavigator: true)
+          .pop(); // Dismiss loading indicator
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("All tasks deleted successfully")),
+      );
+    } catch (e) {
+      // Close loading indicator if there's an error
+      Navigator.of(context, rootNavigator: true).pop();
+
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error deleting tasks: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
 // Logout function
