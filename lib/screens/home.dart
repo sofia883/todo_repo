@@ -165,6 +165,7 @@ class _TodoListState extends State<TodoList> {
       print('Initialization error: $e');
     }
     // _notificationService.initialize();
+    FirebaseTaskService.getScheduledTasksStream();
     FirebaseTaskService.getQuickTasksStream();
     _startOverdueTimer();
     selectedDate = DateTime.now();
@@ -1341,19 +1342,17 @@ class _TodoListState extends State<TodoList> {
 
   Future<void> _loadTodos() async {
     try {
-      setState(() {
-        isLoading = true;
-      });
+      setState(() => isLoading = true);
 
-      // Always cancel existing subscription before creating new one
       await _todoSubscription?.cancel();
 
       _todoSubscription = FirebaseTaskService.getScheduledTasksStream().listen(
         (updatedTodos) {
-          print('Received ${updatedTodos.length} todos from stream');
           if (mounted) {
             setState(() {
-              todos = updatedTodos;
+              // Create a new list and only add non-deleted tasks
+              todos = List<TodoItem>.from(updatedTodos)
+                ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
               isLoading = false;
             });
           }
@@ -1361,18 +1360,14 @@ class _TodoListState extends State<TodoList> {
         onError: (error) {
           print('Error loading todos: $error');
           if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
+            setState(() => isLoading = false);
           }
         },
       );
     } catch (e) {
       print('Error setting up todos stream: $e');
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
+        setState(() => isLoading = false);
       }
     }
   }
@@ -2351,13 +2346,9 @@ class _TodoListState extends State<TodoList> {
                         SizedBox(height: 24),
                         ElevatedButton(
                           onPressed: () async {
-                            setState(() {
-                              showTitleError =
-                                  titleController.text.trim().isEmpty;
-                            });
-
-                            if (showTitleError) {
-                              return; // Stop execution if title is empty
+                            if (titleController.text.trim().isEmpty) {
+                              setState(() => showTitleError = true);
+                              return;
                             }
 
                             setState(() {
@@ -2365,95 +2356,76 @@ class _TodoListState extends State<TodoList> {
                               isLoading = true;
                             });
 
-                            try {
-                              final uuid = Uuid();
-                              List<QuickSubTask> subtasks = subtaskControllers
+                            final uuid = Uuid(); // Define this first
+                            final newScheduledTask = TodoItem(
+                              // Define the task before try block
+                              id: uuid.v4(),
+                              userId: FirebaseAuth.instance.currentUser?.uid ??
+                                  'guest_user',
+                              title: titleController.text.trim(),
+                              description: "",
+                              createdAt: DateTime.now(),
+                              dueDate: selectedDueDate,
+                              dueTime: selectedDueTime,
+                              subtasks: subtaskControllers
                                   .where((controller) =>
                                       controller.text.trim().isNotEmpty)
-                                  .map((controller) => QuickSubTask(
+                                  .map((controller) => SubTask(
                                         id: uuid.v4(),
                                         title: controller.text.trim(),
-                                        isCompleted:
-                                            false, // Default to incomplete
                                       ))
-                                  .toList();
-                              // Create a new quick task
-                              final newQuickTask = QuickTask(
-                                  id: uuid.v4(),
-                                  userId:
-                                      FirebaseAuth.instance.currentUser?.uid ??
-                                          'guest_user',
-                                  title: titleController.text.trim(),
-                                  createdAt: DateTime.now(),
-                                  subtasks: subtasks);
+                                  .toList(),
+                            );
 
-                              // Simulate a loading delay
-                              await Future.delayed(const Duration(seconds: 2));
+                            try {
+                              // Close the bottom sheet first
+                              Navigator.of(context).pop();
 
-                              // Check if the user is authenticated
-                              final user = FirebaseAuth.instance.currentUser;
+                              // Optimistic update - use a new list to avoid modifying the original
+                              setState(() {
+                                todos = List<TodoItem>.from(todos)
+                                  ..add(newScheduledTask);
+                              });
 
-                              if (user == null) {
-                                // Save the quick task locally for unauthenticated users
-                                final localTasks =
-                                    LocalStorageService.getQuickTasks();
-                                localTasks.add(newQuickTask);
-                                await LocalStorageService.saveQuickTasks(
-                                    localTasks);
+                              // Then update Firebase
+                              await FirebaseTaskService.addScheduledTask(
+                                  newScheduledTask);
 
-                                // Show warning only if not shown before
-                                _hasShownUnauthenticatedWarning =
-                                    await _checkIfShownAgain();
-                                if (!_hasShownUnauthenticatedWarning) {
-                                  _showUnauthenticatedWarning(context);
-                                }
-
-                                // Close the bottom sheet after saving locally
-                                Navigator.of(context).pop();
-                                return;
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Task added successfully'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } catch (e) {
+                              // Revert optimistic update if Firebase update fails
+                              if (mounted) {
+                                setState(() {
+                                  todos.removeWhere(
+                                      (t) => t.id == newScheduledTask.id);
+                                });
                               }
 
-                              // If the user is authenticated, save the quick task to Firestore
-                              await FirebaseTaskService.addQuickTask(
-                                  newQuickTask);
-
-                              // Close the bottom sheet
-                              Navigator.of(context).pop();
-                            } catch (e) {
-                              // Handle unexpected errors
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'Failed to add quick task. Please try again.',
-                                    style: GoogleFonts.inter(),
-                                  ),
+                                      'Failed to add task. Please try again.'),
                                   backgroundColor: Colors.red,
                                 ),
                               );
                             } finally {
-                              // Disable loading state
-                              setState(() {
-                                isLoading = false;
-                              });
+                              if (mounted) {
+                                setState(() {
+                                  isLoading = false;
+                                });
+                              }
                             }
                           },
                           child: isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white),
-                                  ),
-                                )
-                              : Text(
-                                  'Add Task',
-                                  style: GoogleFonts.inter(color: Colors.white),
-                                ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: currentCategoryColor,
-                          ),
+                              ? CircularProgressIndicator()
+                              : Text("Add Scheduled Task"),
                         )
                       ],
                     ),

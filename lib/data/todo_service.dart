@@ -501,11 +501,13 @@ class FirebaseTaskService {
 
   static Stream<List<TodoItem>> getScheduledTasksStream() {
     if (!_isAuthenticated) {
+      // When the user is not authenticated, use local storage only
       final localTasks = LocalStorageService.getScheduledTasks();
-      _scheduledTasksController.add(localTasks);
-      return _scheduledTasksController.stream;
+      _scheduledTasksController.add(localTasks); // Emit the tasks in the stream
+      return _scheduledTasksController.stream; // Return the stream
     }
 
+    // If the user is authenticated, fetch from Firestore
     if (_isOnline) {
       return _scheduledTasksRef
           .where('userId', isEqualTo: _userId)
@@ -517,12 +519,13 @@ class FirebaseTaskService {
           return TodoItem.fromJson(data);
         }).toList();
 
-        // Add to behavior subject
+        // Update the stream with tasks and save them to local storage
         _scheduledTasksController.add(tasks);
         LocalStorageService.saveScheduledTasks(tasks);
         return tasks;
       });
     } else {
+      // If offline, fetch tasks from local storage
       final localTasks = LocalStorageService.getScheduledTasks();
       _scheduledTasksController.add(localTasks);
       return _scheduledTasksController.stream;
@@ -575,13 +578,19 @@ class FirebaseTaskService {
       );
 
       if (_isAuthenticated && _isOnline) {
+        // If authenticated and online, save to Firestore
         await _scheduledTasksRef
             .doc(taskWithUserId.id)
             .set(taskWithUserId.toJson());
       } else {
+        // If offline, store locally
         final localTasks = LocalStorageService.getScheduledTasks();
         localTasks.add(taskWithUserId);
+
+        // Save locally
         await LocalStorageService.saveScheduledTasks(localTasks);
+
+        // Update the stream to notify listeners of the new task
         _scheduledTasksController.add(localTasks);
       }
     } catch (e) {
@@ -612,29 +621,6 @@ class FirebaseTaskService {
     } catch (e) {
       print('Failed to add quick task: $e');
       throw Exception('Failed to add quick task: $e');
-    }
-  }
-
-  // Sync with server
-  static Future<void> syncWithServer() async {
-    if (!_isOnline) return;
-
-    try {
-      // Sync scheduled tasks
-      final localScheduledTasks = LocalStorageService.getScheduledTasks();
-      for (var task in localScheduledTasks) {
-        final taskWithUserId = task.copyWith(userId: _userId);
-        await _scheduledTasksRef.doc(task.id).set(taskWithUserId.toJson());
-      }
-
-      // Sync quick tasks
-      final localQuickTasks = LocalStorageService.getQuickTasks();
-      for (var task in localQuickTasks) {
-        final taskWithUserId = task.copyWith(userId: _userId);
-        await _quickTasksRef.doc(task.id).set(taskWithUserId.toJson());
-      }
-    } catch (e) {
-      print('Sync failed: $e');
     }
   }
 
@@ -720,11 +706,79 @@ class FirebaseTaskService {
     }
   }
 
+  // ... existing code ...
+
   static Future<void> deleteScheduledTask(String taskId) async {
     try {
-      await _scheduledTasksRef.doc(taskId).delete();
+      // First remove from local storage to prevent sync issues
+      final localTasks = LocalStorageService.getScheduledTasks();
+      final updatedTasks =
+          localTasks.where((task) => task.id != taskId).toList();
+      await LocalStorageService.saveScheduledTasks(updatedTasks);
+
+      // Update the stream immediately
+      _scheduledTasksController.add(updatedTasks);
+
+      // Then delete from Firebase if online
+      if (_isAuthenticated && _isOnline) {
+        await _scheduledTasksRef.doc(taskId).delete();
+      }
     } catch (e) {
+      // Revert local deletion if Firebase deletion fails
+      if (_isAuthenticated && _isOnline) {
+        final localTasks = LocalStorageService.getScheduledTasks();
+        await LocalStorageService.saveScheduledTasks(localTasks);
+        _scheduledTasksController.add(localTasks);
+      }
       throw Exception('Failed to delete scheduled task: $e');
+    }
+  }
+
+  static Future<void> syncWithServer() async {
+    if (!_isOnline || !_isAuthenticated) return;
+
+    try {
+      // Get the current server state first
+      final serverSnapshot = await _scheduledTasksRef.get();
+      final serverTasks = serverSnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        return TodoItem.fromJson(data);
+      }).toList();
+
+      // Get local tasks
+      final localTasks = LocalStorageService.getScheduledTasks();
+
+      // Create sets of IDs for comparison
+      final serverIds = Set.from(serverTasks.map((t) => t.id));
+      final localIds = Set.from(localTasks.map((t) => t.id));
+
+      // Find tasks that need to be synced
+      final tasksToUpload =
+          localTasks.where((task) => !serverIds.contains(task.id));
+      final tasksToDelete =
+          serverTasks.where((task) => !localIds.contains(task.id));
+
+      // Batch operations
+      final batch = _firestore.batch();
+
+      // Upload new local tasks
+      for (var task in tasksToUpload) {
+        final taskWithUserId = task.copyWith(userId: _userId);
+        final docRef = _scheduledTasksRef.doc(task.id);
+        batch.set(docRef, taskWithUserId.toJson());
+      }
+
+      // Delete tasks that were removed locally
+      for (var task in tasksToDelete) {
+        final docRef = _scheduledTasksRef.doc(task.id);
+        batch.delete(docRef);
+      }
+
+      // Commit all changes
+      await batch.commit();
+    } catch (e) {
+      print('Sync failed: $e');
     }
   }
 
