@@ -738,7 +738,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
     // Delete user data and account from Firebase
 
-    await FirebaseTaskService.deleteUserDataAndAccount();
+    await FirebaseTaskService.deleteAllData();
 
     // Trigger a UI update with the new tasks list
     setState(() {

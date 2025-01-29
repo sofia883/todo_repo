@@ -468,6 +468,11 @@ class _TodoListState extends State<TodoList> {
       final deletedTodo = todo;
 
       try {
+        // Remove from local list first
+        setState(() {
+          todos.removeWhere((t) => t.id == todo.id);
+        });
+
         await FirebaseTaskService.deleteScheduledTask(todo.id);
 
         if (!context.mounted) return;
@@ -479,24 +484,8 @@ class _TodoListState extends State<TodoList> {
               label: 'UNDO',
               onPressed: () async {
                 try {
-                  setState(() {
-                    todos.add(deletedTodo);
-                  });
-
                   await FirebaseTaskService.addScheduledTask(deletedTodo);
-
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Task restored'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
                 } catch (e) {
-                  setState(() {
-                    todos.remove(deletedTodo);
-                  });
-
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -511,7 +500,7 @@ class _TodoListState extends State<TodoList> {
           ),
         );
       } catch (e) {
-        // If deletion fails, restore the item to UI
+        // If deletion fails, restore the item
         setState(() {
           todos.add(deletedTodo);
         });
@@ -595,7 +584,6 @@ class _TodoListState extends State<TodoList> {
             child: const Icon(Icons.delete, color: Colors.white),
           ),
           confirmDismiss: (direction) async {
-            // Show confirmation dialog
             final shouldDelete = await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
@@ -618,6 +606,7 @@ class _TodoListState extends State<TodoList> {
 
             if (shouldDelete ?? false) {
               await handleDelete(todo);
+              return true; // Allow the dismissible to remove the item
             }
             return false;
           },
@@ -1352,34 +1341,39 @@ class _TodoListState extends State<TodoList> {
 
   Future<void> _loadTodos() async {
     try {
-      if (todos.isEmpty) {
-        setState(() {
-          isLoading = true;
-        });
-      }
+      setState(() {
+        isLoading = true;
+      });
 
+      // Always cancel existing subscription before creating new one
       await _todoSubscription?.cancel();
 
       _todoSubscription = FirebaseTaskService.getScheduledTasksStream().listen(
         (updatedTodos) {
           print('Received ${updatedTodos.length} todos from stream');
-          setState(() {
-            todos = updatedTodos;
-            isLoading = false;
-          });
+          if (mounted) {
+            setState(() {
+              todos = updatedTodos;
+              isLoading = false;
+            });
+          }
         },
         onError: (error) {
           print('Error loading todos: $error');
-          setState(() {
-            isLoading = false;
-          });
+          if (mounted) {
+            setState(() {
+              isLoading = false;
+            });
+          }
         },
       );
     } catch (e) {
       print('Error setting up todos stream: $e');
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -1479,44 +1473,6 @@ class _TodoListState extends State<TodoList> {
         },
       );
     }
-  }
-
-  List<Widget> _buildSubtasks(QuickTask task) {
-    if (task.subtasks.isEmpty) {
-      return [];
-    }
-
-    return [
-      const Divider(height: 1),
-      ListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: task.subtasks.length,
-        itemBuilder: (context, index) {
-          final subtask = task.subtasks[index];
-          return ListTile(
-            dense: true,
-            leading: Checkbox(
-              value: subtask.isCompleted,
-              onChanged: (bool? value) async {
-                setState(() {
-                  subtask.isCompleted = value ?? false;
-                });
-                await FirebaseTaskService.addQuickTask(task);
-              },
-            ),
-            title: Text(
-              subtask.title,
-              style: TextStyle(
-                decoration:
-                    subtask.isCompleted ? TextDecoration.lineThrough : null,
-                color: subtask.isCompleted ? Colors.grey : Colors.black87,
-              ),
-            ),
-          );
-        },
-      ),
-    ];
   }
 
   Future<void> _showRescheduleDialog(
@@ -2395,7 +2351,6 @@ class _TodoListState extends State<TodoList> {
                         SizedBox(height: 24),
                         ElevatedButton(
                           onPressed: () async {
-                            // Validate title with more detailed error handling
                             setState(() {
                               showTitleError =
                                   titleController.text.trim().isEmpty;
@@ -2405,71 +2360,78 @@ class _TodoListState extends State<TodoList> {
                               return; // Stop execution if title is empty
                             }
 
-                            // Disable error after initial validation
                             setState(() {
                               showTitleError = false;
                               isLoading = true;
                             });
 
                             try {
-                              // Check user authentication
-
                               final uuid = Uuid();
-
-                              List<SubTask> subtasks = subtaskControllers
+                              List<QuickSubTask> subtasks = subtaskControllers
                                   .where((controller) =>
                                       controller.text.trim().isNotEmpty)
-                                  .map((controller) => SubTask(
+                                  .map((controller) => QuickSubTask(
                                         id: uuid.v4(),
                                         title: controller.text.trim(),
+                                        isCompleted:
+                                            false, // Default to incomplete
                                       ))
                                   .toList();
+                              // Create a new quick task
+                              final newQuickTask = QuickTask(
+                                  id: uuid.v4(),
+                                  userId:
+                                      FirebaseAuth.instance.currentUser?.uid ??
+                                          'guest_user',
+                                  title: titleController.text.trim(),
+                                  createdAt: DateTime.now(),
+                                  subtasks: subtasks);
 
-                              final newTodo = TodoItem(
-                                id: uuid.v4(),
-                                userId: FirebaseAuth
-                                        .instance.currentUser?.uid ??
-                                    'guest_user', // Use authenticated user ID or fallback to 'guest_user'
-
-                                title: titleController.text.trim(),
-                                description: "",
-                                createdAt: DateTime.now(),
-                                dueDate: selectedDueDate,
-                                dueTime: selectedDueTime,
-                                subtasks: subtasks,
-                              );
+                              // Simulate a loading delay
                               await Future.delayed(const Duration(seconds: 2));
 
-                              // Close the bottom sheet after successful task addition
-                              Navigator.of(context).pop();
-                              // Add the task locally first, whether the user is authenticated or not
-                              await FirebaseTaskService.addScheduledTask(
-                                  newTodo);
+                              // Check if the user is authenticated
                               final user = FirebaseAuth.instance.currentUser;
+
                               if (user == null) {
-                                // Check SharedPreferences for "Don't show again" preference
+                                // Save the quick task locally for unauthenticated users
+                                final localTasks =
+                                    LocalStorageService.getQuickTasks();
+                                localTasks.add(newQuickTask);
+                                await LocalStorageService.saveQuickTasks(
+                                    localTasks);
+
+                                // Show warning only if not shown before
                                 _hasShownUnauthenticatedWarning =
                                     await _checkIfShownAgain();
-
                                 if (!_hasShownUnauthenticatedWarning) {
                                   _showUnauthenticatedWarning(context);
                                 }
-                                return; // Stop further execution if not authenticated
+
+                                // Close the bottom sheet after saving locally
+                                Navigator.of(context).pop();
+                                return;
                               }
-                              // Simulate loading by waiting for 2 seconds
+
+                              // If the user is authenticated, save the quick task to Firestore
+                              await FirebaseTaskService.addQuickTask(
+                                  newQuickTask);
+
+                              // Close the bottom sheet
+                              Navigator.of(context).pop();
                             } catch (e) {
-                              // Optional: handle any unexpected errors
+                              // Handle unexpected errors
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'Failed to add task. Please try again.',
+                                    'Failed to add quick task. Please try again.',
                                     style: GoogleFonts.inter(),
                                   ),
                                   backgroundColor: Colors.red,
                                 ),
                               );
                             } finally {
-                              // Ensure loading state is disabled
+                              // Disable loading state
                               setState(() {
                                 isLoading = false;
                               });

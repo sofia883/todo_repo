@@ -5,6 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:to_do_app/data/todo_notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -492,31 +493,19 @@ class FirebaseTaskService {
         as StreamSubscription<ConnectivityResult>;
   }
 
-  // Dispose connectivity subscription
-  static Future<void> dispose() async {
-    await _connectivitySubscription.cancel();
-  }
-
-  // Add scheduled task with user ID
-  static Future<void> addScheduledTask(TodoItem task) async {
-    final taskWithUserId = task.copyWith(userId: _userId);
-
-    try {
-      if (_isOnline) {
-        await _scheduledTasksRef.doc(task.id).set(taskWithUserId.toJson());
-      }
-      final localTasks = LocalStorageService.getScheduledTasks();
-      localTasks.add(taskWithUserId);
-      await LocalStorageService.saveScheduledTasks(localTasks);
-    } catch (e) {
-      // Save locally on failure
-      final localTasks = LocalStorageService.getScheduledTasks();
-      localTasks.add(taskWithUserId);
-      await LocalStorageService.saveScheduledTasks(localTasks);
-    }
-  }
+  // Change to BehaviorSubject
+  static final _quickTasksController =
+      BehaviorSubject<List<QuickTask>>.seeded([]);
+  static final _scheduledTasksController =
+      BehaviorSubject<List<TodoItem>>.seeded([]);
 
   static Stream<List<TodoItem>> getScheduledTasksStream() {
+    if (!_isAuthenticated) {
+      final localTasks = LocalStorageService.getScheduledTasks();
+      _scheduledTasksController.add(localTasks);
+      return _scheduledTasksController.stream;
+    }
+
     if (_isOnline) {
       return _scheduledTasksRef
           .where('userId', isEqualTo: _userId)
@@ -527,37 +516,26 @@ class FirebaseTaskService {
           data['id'] = doc.id;
           return TodoItem.fromJson(data);
         }).toList();
-        LocalStorageService.saveScheduledTasks(
-            tasks); // Sync with local storage
+
+        // Add to behavior subject
+        _scheduledTasksController.add(tasks);
+        LocalStorageService.saveScheduledTasks(tasks);
         return tasks;
       });
     } else {
-      return Stream.value(
-          LocalStorageService.getScheduledTasks()); // Offline fallback
+      final localTasks = LocalStorageService.getScheduledTasks();
+      _scheduledTasksController.add(localTasks);
+      return _scheduledTasksController.stream;
     }
   }
 
-  // Add quick task with user ID
-  static Future<void> addQuickTask(QuickTask task) async {
-    final taskWithUserId = task.copyWith(userId: _userId);
-
-    try {
-      if (_isOnline) {
-        await _quickTasksRef.doc(task.id).set(taskWithUserId.toJson());
-      }
-      final localTasks = LocalStorageService.getQuickTasks();
-      localTasks.add(taskWithUserId);
-      await LocalStorageService.saveQuickTasks(localTasks);
-    } catch (e) {
-      // Save locally on failure
-      final localTasks = LocalStorageService.getQuickTasks();
-      localTasks.add(taskWithUserId);
-      await LocalStorageService.saveQuickTasks(localTasks);
-    }
-  }
-
-  // Stream quick tasks
   static Stream<List<QuickTask>> getQuickTasksStream() {
+    if (!_isAuthenticated) {
+      final localTasks = LocalStorageService.getQuickTasks();
+      _quickTasksController.add(localTasks);
+      return _quickTasksController.stream;
+    }
+
     if (_isOnline) {
       return _quickTasksRef
           .where('userId', isEqualTo: _userId)
@@ -568,11 +546,72 @@ class FirebaseTaskService {
           data['id'] = doc.id;
           return QuickTask.fromJson(data);
         }).toList();
+
+        // Add to behavior subject
+        _quickTasksController.add(tasks);
         LocalStorageService.saveQuickTasks(tasks);
         return tasks;
       });
     } else {
-      return Stream.value(LocalStorageService.getQuickTasks());
+      final localTasks = LocalStorageService.getQuickTasks();
+      _quickTasksController.add(localTasks);
+      return _quickTasksController.stream;
+    }
+  }
+
+  static Future<void> dispose() async {
+    await _connectivitySubscription.cancel();
+    await _quickTasksController.close();
+    await _scheduledTasksController.close();
+  }
+
+  static Future<void> addScheduledTask(TodoItem task) async {
+    try {
+      final userId = await LocalStorageService.getCurrentUserId();
+      final taskWithUserId = task.copyWith(
+        userId: userId,
+        id: task.id ?? const Uuid().v4(),
+        createdAt: DateTime.now(),
+      );
+
+      if (_isAuthenticated && _isOnline) {
+        await _scheduledTasksRef
+            .doc(taskWithUserId.id)
+            .set(taskWithUserId.toJson());
+      } else {
+        final localTasks = LocalStorageService.getScheduledTasks();
+        localTasks.add(taskWithUserId);
+        await LocalStorageService.saveScheduledTasks(localTasks);
+        _scheduledTasksController.add(localTasks);
+      }
+    } catch (e) {
+      print('Failed to add scheduled task: $e');
+      throw Exception('Failed to add scheduled task: $e');
+    }
+  }
+
+  static Future<void> addQuickTask(QuickTask task) async {
+    try {
+      final userId = await LocalStorageService.getCurrentUserId();
+      final taskWithUserId = task.copyWith(
+        userId: userId,
+        id: task.id ?? const Uuid().v4(),
+        createdAt: DateTime.now(),
+      );
+
+      if (_isAuthenticated && _isOnline) {
+        await _quickTasksRef
+            .doc(taskWithUserId.id)
+            .set(taskWithUserId.toJson());
+      } else {
+        final localTasks = LocalStorageService.getQuickTasks();
+        localTasks.add(taskWithUserId);
+        await LocalStorageService.saveQuickTasks(localTasks);
+        _quickTasksController.add(localTasks);
+      }
+    } catch (e) {
+      print('Failed to add quick task: $e');
+      throw Exception('Failed to add quick task: $e');
     }
   }
 
@@ -696,6 +735,45 @@ class FirebaseTaskService {
       await LocalStorageService.clear(); // Clear only local data on the device
     } catch (e) {
       print('Error during logout: $e');
+    }
+  }
+
+  static bool get _isAuthenticated => _auth.currentUser != null;
+  static Future<void> deleteAllData() async {
+    try {
+      // Delete local data first
+      await LocalStorageService.clear();
+
+      // If user is authenticated and online, delete Firebase data
+      if (_isAuthenticated && _isOnline) {
+        final userId = _auth.currentUser!.uid;
+        final userRef = _firestore.collection('users').doc(userId);
+
+        // Delete all scheduled tasks using batch
+        final scheduledTasksSnapshot = await _scheduledTasksRef.get();
+        final quickTasksSnapshot = await _quickTasksRef.get();
+
+        // Use batched writes for better performance
+        final batch = _firestore.batch();
+
+        // Add scheduled tasks deletion to batch
+        for (var doc in scheduledTasksSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+
+        // Add quick tasks deletion to batch
+        for (var doc in quickTasksSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+
+        // Commit the batch
+        await batch.commit();
+
+        print('All data deleted successfully');
+      }
+    } catch (e) {
+      print('Failed to delete all data: $e');
+      throw Exception('Failed to delete all data: $e');
     }
   }
 
