@@ -568,6 +568,164 @@ class FirebaseTaskService {
     await _scheduledTasksController.close();
   }
 
+  static Future<void> updateScheduledTask(TodoItem task) async {
+    try {
+      final userId = await LocalStorageService.getCurrentUserId();
+      final updatedTask = task.copyWith(
+        userId: userId,
+      );
+
+      if (_isAuthenticated && _isOnline) {
+        // Update in Firestore if authenticated and online
+        await _scheduledTasksRef.doc(task.id).update(updatedTask.toJson());
+      }
+
+      // Update in local storage
+      final localTasks = LocalStorageService.getScheduledTasks();
+      final taskIndex = localTasks.indexWhere((t) => t.id == task.id);
+
+      if (taskIndex != -1) {
+        localTasks[taskIndex] = updatedTask;
+        await LocalStorageService.saveScheduledTasks(localTasks);
+        _scheduledTasksController.add(localTasks);
+      } else {
+        // If task doesn't exist locally, add it
+        localTasks.add(updatedTask);
+        await LocalStorageService.saveScheduledTasks(localTasks);
+        _scheduledTasksController.add(localTasks);
+      }
+    } catch (e) {
+      print('Failed to update scheduled task: $e');
+      throw Exception('Failed to update scheduled task: $e');
+    }
+  }
+
+  static Future<void> updateQuickTask(QuickTask task) async {
+    try {
+      final userId = await LocalStorageService.getCurrentUserId();
+      final updatedTask = task.copyWith(
+        userId: userId,
+      );
+
+      if (_isAuthenticated && _isOnline) {
+        // Update in Firestore if authenticated and online
+        await _quickTasksRef.doc(task.id).update(updatedTask.toJson());
+      }
+
+      // Update in local storage
+      final localTasks = LocalStorageService.getQuickTasks();
+      final taskIndex = localTasks.indexWhere((t) => t.id == task.id);
+
+      if (taskIndex != -1) {
+        localTasks[taskIndex] = updatedTask;
+        await LocalStorageService.saveQuickTasks(localTasks);
+        _quickTasksController.add(localTasks);
+      } else {
+        // If task doesn't exist locally, add it
+        localTasks.add(updatedTask);
+        await LocalStorageService.saveQuickTasks(localTasks);
+        _quickTasksController.add(localTasks);
+      }
+    } catch (e) {
+      print('Failed to update quick task: $e');
+      throw Exception('Failed to update quick task: $e');
+    }
+  }
+
+  static Future<void> updateScheduledSubtask(
+    String taskId,
+    String subtaskId,
+    bool isCompleted,
+  ) async {
+    try {
+      final localTasks = LocalStorageService.getScheduledTasks();
+      final taskIndex = localTasks.indexWhere((t) => t.id == taskId);
+
+      if (taskIndex != -1) {
+        final task = localTasks[taskIndex];
+        final updatedSubtasks = List<Map<String, dynamic>>.from(task.subtasks);
+        final subtaskIndex =
+            updatedSubtasks.indexWhere((s) => s['id'] == subtaskId);
+
+        if (subtaskIndex != -1) {
+          updatedSubtasks[subtaskIndex]['isCompleted'] = isCompleted;
+
+          // Check if all subtasks are completed
+          final allCompleted =
+              updatedSubtasks.every((s) => s['isCompleted'] == true);
+
+          final updatedTask = task.copyWith(
+            isCompleted: allCompleted,
+          );
+
+          // Update locally
+          localTasks[taskIndex] = updatedTask;
+          await LocalStorageService.saveScheduledTasks(localTasks);
+          _scheduledTasksController.add(localTasks);
+
+          // Update in Firestore if authenticated and online
+          if (_isAuthenticated && _isOnline) {
+            await _scheduledTasksRef.doc(taskId).update({
+              'subtasks': updatedSubtasks,
+              'isCompleted': allCompleted,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('Failed to update scheduled subtask: $e');
+      throw Exception('Failed to update scheduled subtask: $e');
+    }
+  }
+
+  static Future<void> updateQuickSubtaskCompletion(
+    String taskId,
+    String subtaskId,
+    bool isCompleted,
+  ) async {
+    try {
+      final localTasks = LocalStorageService.getQuickTasks();
+      final taskIndex = localTasks.indexWhere((t) => t.id == taskId);
+
+      if (taskIndex != -1) {
+        final task = localTasks[taskIndex];
+        final updatedSubtasks = List<Map<String, dynamic>>.from(task.subtasks);
+        final subtaskIndex =
+            updatedSubtasks.indexWhere((s) => s['id'] == subtaskId);
+
+        if (subtaskIndex != -1) {
+          updatedSubtasks[subtaskIndex]['isCompleted'] = isCompleted;
+
+          // Check if all subtasks are completed
+          final allCompleted =
+              updatedSubtasks.every((s) => s['isCompleted'] == true);
+
+          final updatedTask = task.copyWith(
+            isCompleted: allCompleted,
+          );
+
+          // Update locally
+          localTasks[taskIndex] = updatedTask;
+          await LocalStorageService.saveQuickTasks(localTasks);
+          _quickTasksController.add(localTasks);
+
+          // Update in Firestore if authenticated and online
+          if (_isAuthenticated && _isOnline) {
+            await _quickTasksRef.doc(taskId).update({
+              'subtasks': updatedSubtasks,
+              'isCompleted': allCompleted,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('Failed to update quick subtask: $e');
+      throw Exception('Failed to update quick subtask: $e');
+    }
+  }
+
   static Future<void> addScheduledTask(TodoItem task) async {
     try {
       final userId = await LocalStorageService.getCurrentUserId();
@@ -633,29 +791,6 @@ class FirebaseTaskService {
     });
   }
 
-  static Future<void> updateQuickSubtaskCompletion(
-    String taskId,
-    String subtaskId,
-    bool isCompleted,
-  ) async {
-    final taskDoc = await _quickTasksRef.doc(taskId).get();
-    final taskData = taskDoc.data() as Map<String, dynamic>;
-    final subtasks = List<Map<String, dynamic>>.from(taskData['subtasks']);
-
-    final subtaskIndex = subtasks.indexWhere((s) => s['id'] == subtaskId);
-    if (subtaskIndex != -1) {
-      subtasks[subtaskIndex]['isCompleted'] = isCompleted;
-
-      // Check if all subtasks are completed
-      final allCompleted = subtasks.every((s) => s['isCompleted'] == true);
-
-      await _quickTasksRef.doc(taskId).update({
-        'subtasks': subtasks,
-        'isCompleted': allCompleted,
-      });
-    }
-  }
-
   static Future<void> updateRescheduleScheduledTask(
     String taskId,
     DateTime newDate,
@@ -682,27 +817,29 @@ class FirebaseTaskService {
     }
   }
 
-  static Future<void> updateQuickTask(QuickTask task) async {
-    try {
-      await _quickTasksRef.doc(task.id).update(task.toJson());
-    } catch (e) {
-      throw Exception('Failed to update quick task: $e');
-    }
-  }
-
   static Future<void> deleteQuickTask(String taskId) async {
     try {
-      await _quickTasksRef.doc(taskId).delete();
-    } catch (e) {
-      throw Exception('Failed to delete quick task: $e');
-    }
-  }
+      // First remove from local storage
+      final localTasks = LocalStorageService.getQuickTasks();
+      final updatedTasks =
+          localTasks.where((task) => task.id != taskId).toList();
+      await LocalStorageService.saveQuickTasks(updatedTasks);
 
-  static Future<void> updateScheduledTask(TodoItem task) async {
-    try {
-      await _scheduledTasksRef.doc(task.id).update(task.toJson());
+      // Update the stream immediately
+      _quickTasksController.add(updatedTasks);
+
+      // Then delete from Firebase if online and authenticated
+      if (_isAuthenticated && _isOnline) {
+        await _quickTasksRef.doc(taskId).delete();
+      }
     } catch (e) {
-      throw Exception('Failed to update scheduled task: $e');
+      // Revert local deletion if Firebase deletion fails
+      if (_isAuthenticated && _isOnline) {
+        final localTasks = LocalStorageService.getQuickTasks();
+        await LocalStorageService.saveQuickTasks(localTasks);
+        _quickTasksController.add(localTasks);
+      }
+      throw Exception('Failed to delete quick task: $e');
     }
   }
 

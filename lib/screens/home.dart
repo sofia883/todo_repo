@@ -887,77 +887,62 @@ class _TodoListState extends State<TodoList> {
             padding: const EdgeInsets.only(right: 20),
             child: const Icon(Icons.delete, color: Colors.white),
           ),
-          confirmDismiss: (direction) async {
-            return await showDialog<bool>(
-                  // Confirm before deleting
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Delete Task'),
-                    content: const Text(
-                        'Are you sure you want to delete this task?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('CANCEL'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('DELETE',
-                            style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                ) ??
-                false;
-          },
           onDismissed: (direction) async {
+            // Store the single deleted task for potential undo
+            final deletedTask =
+                task.copyWith(); // Create a copy to avoid reference issues
+
             try {
               // Delete the task from the database
               await FirebaseTaskService.deleteQuickTask(task.id);
 
-              // Show the SnackBar with undo option if widget is still mounted
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Task deleted'),
-                    action: SnackBarAction(
-                      label: 'UNDO',
-                      onPressed: () async {
-                        try {
-                          // If undo is pressed, restore the task
-                          await FirebaseTaskService.addQuickTask(task);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Task restored'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Failed to restore task'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                    ),
+              if (!context.mounted) return;
+
+              // Clear existing snackbars to avoid multiple undo options
+              ScaffoldMessenger.of(context).clearSnackBars();
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Task deleted'),
+                  action: SnackBarAction(
+                    label: 'UNDO',
+                    onPressed: () async {
+                      try {
+                        // Only restore this specific deleted task
+                        await FirebaseTaskService.addQuickTask(deletedTask);
+
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Task restored'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to restore task'),
+                            backgroundColor: Colors.red,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
                   ),
-                );
-              }
+                  duration: const Duration(seconds: 5),
+                ),
+              );
             } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Failed to delete task'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Failed to delete task'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 2),
+                ),
+              );
             }
           },
           child: Card(
