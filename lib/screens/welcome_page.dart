@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:to_do_app/common_imports.dart';
 
 class WelcomePage extends StatelessWidget {
   @override
@@ -103,7 +103,7 @@ class WelcomePage extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'Get Started',
+                                'Start Organizing Now ',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,

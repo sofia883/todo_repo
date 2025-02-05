@@ -1,14 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
-import 'dart:io';
-import 'package:to_do_app/data/todo_service.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:to_do_app/screens/home.dart';
+import 'package:to_do_app/common_imports.dart';
 
 class ProfilePage extends StatefulWidget {
-  List<TodoItem> todos = []; // The list of tasks
+  List<ScheduleTask> todos = []; // The list of tasks
   ProfilePage({Key? key, required this.todos}) : super(key: key);
 
   @override
@@ -23,7 +16,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isEditingName = false;
 
   // Get the updated tasks after deletion
-  List<TodoItem> updatedTasks = LocalStorageService.getScheduledTasks();
+  List<ScheduleTask> updatedTasks = LocalStorageService.getScheduledTasks();
   @override
   void initState() {
     super.initState();
@@ -118,7 +111,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFFF5F7FF),
-      body: StreamBuilder<List<TodoItem>>(
+      body: StreamBuilder<List<ScheduleTask>>(
         stream: FirebaseTaskService.getScheduledTasksStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -292,7 +285,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildProgressSection(List<TodoItem> todos) {
+  Widget _buildProgressSection(List<ScheduleTask> todos) {
     final completedTasks = todos.where((todo) => todo.isCompleted).toList();
     final pendingTasks = _getPendingTasks(todos);
     final overdueTasks = _getOverdueTasks(todos);
@@ -408,7 +401,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  void _showTaskDetailsBottomSheet(String title, List<TodoItem> tasks) {
+  void _showTaskDetailsBottomSheet(String title, List<ScheduleTask> tasks) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -575,11 +568,11 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // Helper methods for task filtering remain the same...
-  List<TodoItem> _getOverdueTasks(List<TodoItem> todos) {
+  List<ScheduleTask> _getOverdueTasks(List<ScheduleTask> todos) {
     return todos.where((task) => _isTaskOverdue(task)).toList();
   }
 
-  bool _isTaskOverdue(TodoItem task) {
+  bool _isTaskOverdue(ScheduleTask task) {
     if (task.isCompleted) return false;
     final now = DateTime.now();
     final taskDueDateTime = DateTime(
@@ -592,7 +585,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return taskDueDateTime.isBefore(now);
   }
 
-  List<TodoItem> _getPendingTasks(List<TodoItem> todos) {
+  List<ScheduleTask> _getPendingTasks(List<ScheduleTask> todos) {
     return todos
         .where((task) =>
                 !task.isCompleted && // Not completed
@@ -776,7 +769,7 @@ class _ProfilePageState extends State<ProfilePage> {
     await FirebaseAuth.instance.signOut();
 
     // Clear tasks locally
-    FirebaseTaskService.logoutAndClearLocalData();
+    FirebaseTaskService.logoutAndClearLocalData(context);
 
     // Navigate to login page after logout
     Navigator.pushNamed(context, '/login').then((_) {
@@ -788,27 +781,24 @@ class _ProfilePageState extends State<ProfilePage> {
 // Delete account function
   void _deleteAccount() async {
     try {
-      // Show the loading indicator
       _showLoadingIndicator();
 
-      // Perform account deletion
-      await FirebaseAuth.instance.currentUser?.delete();
+      // Re-authenticate the user
 
-      // Clear tasks from local storage
+      // Perform account deletion
       await FirebaseTaskService.deleteUserDataAndAccount();
 
       // Close the loading indicator
-      Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop();
 
-      // Navigate to the login page
-      Navigator.pushNamed(context, '/login').then((_) {
-        setState(() {});
+      // Navigate to the login page and clear tasks
+      Navigator.pushReplacementNamed(context, '/login').then((_) {
+        setState(() {
+          widget.todos = [];
+        });
       });
     } catch (e) {
-      // Close the loading indicator
-      Navigator.of(context).pop();
-
-      // Handle errors (e.g., show a message)
+      if (mounted) Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error deleting account: $e")),
       );

@@ -1,15 +1,5 @@
-import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:to_do_app/data/todo_service.dart';
-import 'package:to_do_app/screens/home.dart';
-import 'package:to_do_app/screens/login_page.dart';
-import 'package:to_do_app/screens/welcome_page.dart';
-import 'package:to_do_app/data/todo_notification_service.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:to_do_app/common_imports.dart';
 
-// Initialize notifications and run app
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -21,11 +11,7 @@ void main() async {
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
-  // Ensure Flutter bindings are initialized
 
-  // Initialize notification service
-
-  // Run the app
   runApp(MyApp());
 }
 
@@ -38,25 +24,68 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       home: StreamBuilder<User?>(
-        stream: AuthService().authStateChanges,
+        stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return CircularProgressIndicator();
+            return Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
           }
+
+          // Check if user is authenticated
           if (snapshot.hasData) {
-            return TodoList();
+            // Check if it's a first-time login
+            return FutureBuilder<SharedPreferences>(
+              future: SharedPreferences.getInstance(),
+              builder: (context, prefsSnapshot) {
+                if (prefsSnapshot.connectionState == ConnectionState.waiting) {
+                  return Scaffold(
+                    body: Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+
+                final hasSeenWelcome =
+                    prefsSnapshot.data?.getBool('has_seen_welcome') ?? false;
+                if (!hasSeenWelcome) {
+                  // First time login, show welcome page
+                  prefsSnapshot.data?.setBool('has_seen_welcome', true);
+                  return WelcomePage();
+                } else {
+                  // Returning user, show home page
+                  return HomePage();
+                }
+              },
+            );
           }
+
+          // User is not authenticated, show login page
           return LoginPage();
         },
       ),
-      debugShowCheckedModeBanner: false,
       routes: {
         '/login': (context) => LoginPage(),
         '/welcome': (context) => WelcomePage(),
         '/register': (context) => SignupPage(),
-        '/home': (context) => TodoList(),
+        '/home': (context) => HomePage(),
       },
     );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
   }
 }

@@ -1,7 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
+import 'package:to_do_app/common_imports.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -14,6 +11,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isPasswordVisible = false;
+
   Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
@@ -50,13 +48,10 @@ class _LoginPageState extends State<LoginPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('guest_user_id', guestId);
 
-      print('Created guest user with ID: $guestId');
-
       // Navigate to home screen
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/home');
     } catch (e) {
-      print('Error in skip login: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to create guest session: $e')),
@@ -65,21 +60,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF1E1E1E),
-              Color(0xFF2C2C2C),
-              Color(0xFFFF9800),
-            ],
-            stops: [0.0, 0.5, 1.0],
-          ),
-        ),
+      body: AuthGradientBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -112,14 +95,17 @@ class _LoginPageState extends State<LoginPage> {
                       decoration: InputDecoration(
                         labelText: 'Email',
                         labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.email, color: Colors.orange),
+                        prefixIcon: Icon(Icons.email,
+                            color: Color(0xFFFFB7C5)), // Soft pink
+
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(color: Colors.white24),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.orange),
+                          borderSide: BorderSide(
+                              color: Color(0xFFC2AAE8)), // Medium purple
                         ),
                       ),
                       validator: (value) {
@@ -141,13 +127,13 @@ class _LoginPageState extends State<LoginPage> {
                       decoration: InputDecoration(
                         labelText: 'Password',
                         labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.lock, color: Colors.orange),
+                        prefixIcon: Icon(Icons.lock, color: Color(0xFFF29393)),
                         suffixIcon: IconButton(
                           icon: Icon(
                             _isPasswordVisible
                                 ? Icons.visibility_off
                                 : Icons.visibility,
-                            color: Colors.orange,
+                            color: AppColors.iconColor,
                           ),
                           onPressed: () {
                             setState(() {
@@ -179,12 +165,18 @@ class _LoginPageState extends State<LoginPage> {
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         onPressed: () {
-                          // Handle forgot password
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ResetPasswordPage(),
+                            ),
+                          );
                         },
+// Changed from testPasswordReset
                         child: Text(
                           'Forgot Password?',
                           style: TextStyle(
-                            color: Colors.orange,
+                            color: Color(0xFFF29393),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -195,7 +187,8 @@ class _LoginPageState extends State<LoginPage> {
                     ElevatedButton(
                       onPressed: _isLoading ? null : _handleLogin,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                        backgroundColor: AppColors.buttonBackground,
+                        foregroundColor: AppColors.buttonForeground,
                         padding: EdgeInsets.symmetric(
                           horizontal: 50,
                           vertical: 15,
@@ -218,7 +211,13 @@ class _LoginPageState extends State<LoginPage> {
                     // Register Link
                     TextButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/register');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                SignupPage(), // Navigate to PhoneAuthScreen
+                          ),
+                        );
                       },
                       child: Text(
                         'Don\'t have an account? Sign Up',
@@ -253,7 +252,7 @@ class _LoginPageState extends State<LoginPage> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
-  }
+  } // Add this import at the top of your file
 }
 
 class SignupPage extends StatefulWidget {
@@ -310,19 +309,7 @@ class _SignupPageState extends State<SignupPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF1E1E1E),
-              Color(0xFF2C2C2C),
-              Color(0xFFFF9800),
-            ],
-            stops: [0.0, 0.5, 1.0],
-          ),
-        ),
+      body: AuthGradientBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -355,14 +342,15 @@ class _SignupPageState extends State<SignupPage> {
                       decoration: InputDecoration(
                         labelText: 'Email',
                         labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.email, color: Colors.orange),
+                        prefixIcon: Icon(Icons.email, color: Color(0xFFF29393)),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(color: Colors.white24),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.orange),
+                          borderSide: BorderSide(
+                              color: Color(0xFF8B008B)), // Soft mint green
                         ),
                       ),
                       validator: (value) {
@@ -384,14 +372,13 @@ class _SignupPageState extends State<SignupPage> {
                       decoration: InputDecoration(
                         labelText: 'Password',
                         labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.lock, color: Colors.orange),
+                        prefixIcon: Icon(Icons.lock, color: Color(0xFFF29393)),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _isPasswordVisible
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: Colors.orange,
-                          ),
+                              _isPasswordVisible
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: AppColors.iconColor),
                           onPressed: () {
                             setState(() {
                               _isPasswordVisible = !_isPasswordVisible;
@@ -404,7 +391,8 @@ class _SignupPageState extends State<SignupPage> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.orange),
+                          borderSide: BorderSide(
+                              color: Color(0xFFC2AAE8)), // Medium purple
                         ),
                       ),
                       validator: (value) {
@@ -427,14 +415,14 @@ class _SignupPageState extends State<SignupPage> {
                         labelText: 'Confirm Password',
                         labelStyle: TextStyle(color: Colors.white70),
                         prefixIcon:
-                            Icon(Icons.lock_outline, color: Colors.orange),
+                            Icon(Icons.lock_outline, color: Color(0xFFF29393)),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _isConfirmPasswordVisible
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: Colors.orange,
-                          ),
+                              _isConfirmPasswordVisible
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: AppColors.iconColor), // Button text color
+
                           onPressed: () {
                             setState(() {
                               _isConfirmPasswordVisible =
@@ -466,7 +454,8 @@ class _SignupPageState extends State<SignupPage> {
                     ElevatedButton(
                       onPressed: _isLoading ? null : _handleSignup,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                        backgroundColor: AppColors.buttonBackground,
+                        foregroundColor: AppColors.buttonForeground,
                         padding: EdgeInsets.symmetric(
                           horizontal: 50,
                           vertical: 15,
@@ -519,33 +508,231 @@ class _SignupPageState extends State<SignupPage> {
 }
 
 // Authentication Service
-class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+class ResetPasswordPage extends StatefulWidget {
+  @override
+  _ResetPasswordPageState createState() => _ResetPasswordPageState();
+}
 
-  // Sign up with email and password
-  Future<UserCredential> signUp(String email, String password) async {
-    return await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
+class _ResetPasswordPageState extends State<ResetPasswordPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  bool _isLoading = false;
+  String? _statusMessage;
+  bool _isSuccess = false;
+
+  Future<void> _handleResetPassword() async {
+    setState(() {
+      _isLoading = true;
+      _statusMessage = null;
+      _isSuccess = false;
+    });
+
+    if (_formKey.currentState!.validate()) {
+      try {
+        await FirebaseAuth.instance.sendPasswordResetEmail(
+          email: _emailController.text.trim(),
+        );
+
+        if (mounted) {
+          setState(() {
+            _statusMessage =
+                'Password reset email sent successfully! Please check your inbox';
+            _isSuccess = true;
+          });
+
+          // Wait for 2 seconds to show success message before going back
+          await Future.delayed(Duration(seconds: 2));
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        }
+      } on FirebaseAuthException catch (e) {
+        String errorMessage;
+        switch (e.code) {
+          case 'invalid-email':
+            errorMessage = 'The email address is badly formatted';
+            break;
+          case 'user-not-found':
+            errorMessage = 'No account found with this email address';
+            break;
+          case 'too-many-requests':
+            errorMessage = 'Too many attempts. Please try again later';
+            break;
+          default:
+            errorMessage = 'Failed to send reset email: ${e.message}';
+        }
+
+        if (mounted) {
+          setState(() {
+            _statusMessage = errorMessage;
+            _isSuccess = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _statusMessage = 'An unexpected error occurred';
+            _isSuccess = false;
+          });
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
+    } else {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: AuthGradientBackground(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.lock_reset,
+                    size: 80,
+                    color: Colors.white,
+                  ),
+                  SizedBox(height: 32),
+                  Text(
+                    'Reset Password',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Enter your email address to receive a password reset link',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(height: 40),
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.email, color: AppColors.iconColor),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.white24),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.orange),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.red),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.red),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your email';
+                      }
+                      if (!value.contains('@')) {
+                        return 'Please enter a valid email';
+                      }
+                      return null;
+                    },
+                  ),
+                  if (_statusMessage != null) ...[
+                    SizedBox(height: 16),
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _isSuccess
+                            ? Colors.green.withOpacity(0.1)
+                            : Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _isSuccess ? Colors.green : Colors.red,
+                        ),
+                      ),
+                      child: Text(
+                        _statusMessage!,
+                        style: TextStyle(
+                          color: _isSuccess ? Colors.green : Colors.red,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                  SizedBox(height: 32),
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _handleResetPassword,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.buttonBackground,
+                      foregroundColor: AppColors.buttonForeground,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 50,
+                        vertical: 15,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            'Send Reset Link',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                  SizedBox(height: 20),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      'Back to Login',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
-  // Sign in with email and password
-  Future<UserCredential> signIn(String email, String password) async {
-    return await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
   }
-
-  // Sign out
-  Future<void> signOut() async {
-    await _auth.signOut();
-  }
-
-  // Get current user
-  User? get currentUser => _auth.currentUser;
-
-  // Auth state changes stream
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
 }

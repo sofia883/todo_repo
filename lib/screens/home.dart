@@ -1,59 +1,37 @@
-import 'dart:async';
-import 'dart:convert';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:to_do_app/data/todo_notification_service.dart';
-import 'package:to_do_app/screens/profile_page.dart';
-import 'package:to_do_app/data/todo_service.dart';
-import 'package:uuid/uuid.dart';
+import 'package:to_do_app/common_imports.dart';
 
-class TodoList extends StatefulWidget {
+class HomePage extends StatefulWidget {
   final TodoListData? existingTodoList;
   final TodoListData? todoListData;
 
-  const TodoList({this.todoListData, this.existingTodoList});
+  const HomePage({this.todoListData, this.existingTodoList});
 
   @override
-  _TodoListState createState() => _TodoListState();
+  _HomePageState createState() => _HomePageState();
 }
 
-class _TodoListState extends State<TodoList> {
-  final NotificationService _notificationService = NotificationService();
+class _HomePageState extends State<HomePage> {
   Timer? _timer;
-  late List<TodoItem> todos;
+  late List<ScheduleTask> todos;
   late DateTime selectedDate;
   late DateTime displayedMonth;
   late String currentCategory;
   late Color currentCategoryColor;
   bool showMyTasksOnly = false;
   bool isLoading = true;
+  bool isDarkMode = false;
   final ScrollController _calendarScrollController = ScrollController();
   final TextEditingController _quickAddController = TextEditingController();
   final TextEditingController _quickAddSubtaskController =
       TextEditingController();
   List<QuickTask> _quickTasks = [];
-  bool _isAddingTask = false;
   StreamSubscription? _todoSubscription; // Add this
 
-  List<TodoItem> _currentTasks = [];
+  List<ScheduleTask> _currentTasks = [];
   bool isQuickAddMode = false;
   Future<bool> _checkIfShownAgain() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('hasShownUnauthenticatedWarning') ?? false;
-  }
-
-  Future<void> _setDontShowAgain() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('hasShownUnauthenticatedWarning', true);
-  }
-
-  void _handleDontShowAgain(BuildContext context) async {
-    await _setDontShowAgain();
-    Navigator.pop(context); // Close the snack bar or the page
   }
 
 // Update the timer check method
@@ -124,7 +102,7 @@ class _TodoListState extends State<TodoList> {
   }
 
 // Update your _getTasksForSelectedDate method
-  List<TodoItem> _getTasksForSelectedDate() {
+  List<ScheduleTask> _getTasksForSelectedDate() {
     final now = DateTime.now();
 
     return todos.where((todo) {
@@ -186,11 +164,11 @@ class _TodoListState extends State<TodoList> {
     super.dispose();
   }
 
-  List<TodoItem> _getOverdueTasks() {
+  List<ScheduleTask> _getOverdueTasks() {
     return todos.where((task) => _isTaskOverdue(task)).toList();
   }
 
-  bool _isTaskOverdue(TodoItem todo) {
+  bool _isTaskOverdue(ScheduleTask todo) {
     if (todo.isCompleted) return false;
 
     final now = DateTime.now();
@@ -236,33 +214,22 @@ class _TodoListState extends State<TodoList> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: InkWell(
         onTap: () => _showMonthYearDialog(),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${_getMonthName(displayedMonth.month)} ${displayedMonth.year}',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${_getMonthName(displayedMonth.month)} ${displayedMonth.year}',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const Icon(Icons.arrow_drop_down),
-            ],
-          ),
+            ),
+            const Icon(
+              Icons.arrow_drop_down,
+              color: AppColors.textLight,
+            ),
+          ],
         ),
       ),
     );
@@ -386,7 +353,7 @@ class _TodoListState extends State<TodoList> {
   }
 
   Future<bool> _showTaskCompletionDialog(
-      TodoItem todo, bool isCurrentlyCompleted) async {
+      ScheduleTask todo, bool isCurrentlyCompleted) async {
     String dialogTitle =
         isCurrentlyCompleted ? 'Mark Task as Incomplete?' : 'Complete Task?';
     String dialogContent = isCurrentlyCompleted
@@ -448,7 +415,7 @@ class _TodoListState extends State<TodoList> {
     return result ?? false;
   }
 
-  Widget _buildTaskItem(TodoItem todo, bool isOverdue) {
+  Widget _buildTaskItem(ScheduleTask todo, bool isOverdue) {
     // Helper function to check if all subtasks are complete
     bool areAllSubtasksComplete() {
       return todo.subtasks.every((subtask) => subtask.isCompleted);
@@ -465,7 +432,7 @@ class _TodoListState extends State<TodoList> {
       }
     }
 
-    Future<void> handleDelete(TodoItem todo) async {
+    Future<void> handleDelete(ScheduleTask todo) async {
       final deletedTodo = todo;
 
       try {
@@ -1145,32 +1112,105 @@ class _TodoListState extends State<TodoList> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     Widget mainContent = _buildTaskList();
 
+    // Choose the appropriate gradient background based on theme mode
+    final Widget backgroundWrapper = isDarkMode
+        ? HomePageDarkGradientBackground(
+            child: _buildScaffold(mainContent),
+          )
+        : HomePageGradientBackground(
+            child: _buildScaffold(mainContent),
+          );
+
+    return backgroundWrapper;
+  }
+
+  Widget _buildScaffold(Widget mainContent) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.account_circle,
-            color: currentCategoryColor,
-            size: 45,
-          ),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ProfilePage(todos: todos),
+        automaticallyImplyLeading: false,
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Profile icon on the left
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => ProfilePage(todos: todos)),
+                );
+              },
+              child: CircleAvatar(
+                radius: 22,
+                backgroundColor: Colors.white.withOpacity(0.3),
+                child: const Icon(
+                  Icons.account_circle,
+                  size: 35,
+                  color: Colors.white,
+                ),
               ),
-            );
-          },
+            ),
+
+            // Three-dot menu on the right
+            PopupMenuButton<String>(
+              icon: const Icon(
+                Icons.more_vert,
+                color: Colors.white,
+                size: 28,
+              ),
+              onSelected: (value) {
+                if (value == 'logout') {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => LoginPage()),
+                  );
+                } else if (value == 'toggle_theme') {
+                  setState(() {
+                    isDarkMode = !isDarkMode;
+                  });
+                }
+                // Add more menu options here if needed
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'toggle_theme',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.brightness_6,
+                        color: isDarkMode ? Colors.yellow : Colors.grey[700],
+                        size: 22,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(isDarkMode ? 'Light Mode' : 'Dark Mode'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.logout,
+                        color: Colors.grey[700],
+                        size: 22,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Logout'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
       body: SafeArea(
@@ -1336,7 +1376,7 @@ class _TodoListState extends State<TodoList> {
           if (mounted) {
             setState(() {
               // Create a new list and only add non-deleted tasks
-              todos = List<TodoItem>.from(updatedTodos)
+              todos = List<ScheduleTask>.from(updatedTodos)
                 ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
               isLoading = false;
             });
@@ -1456,7 +1496,7 @@ class _TodoListState extends State<TodoList> {
   }
 
   Future<void> _showRescheduleDialog(
-      BuildContext context, TodoItem todo) async {
+      BuildContext context, ScheduleTask todo) async {
     DateTime selectedDate = todo.dueDate;
     TimeOfDay? selectedTime = todo.dueTime;
 
@@ -1702,147 +1742,128 @@ class _TodoListState extends State<TodoList> {
     return Column(
       children: [
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-                .map((day) => Expanded(
-                      child: Center(
-                        child: Text(
-                          day,
+          padding: const EdgeInsets.all(8.0),
+          child: Container(
+            height: 100,
+            child: ListView.builder(
+              controller: _calendarScrollController,
+              scrollDirection: Axis.horizontal,
+              itemCount: orderedDates.length,
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              itemBuilder: (context, index) {
+                final date = orderedDates[index];
+                final isSelected = selectedDate.year == date.year &&
+                    selectedDate.month == date.month &&
+                    selectedDate.day == date.day;
+                final isToday = date.year == today.year &&
+                    date.month == today.month &&
+                    date.day == today.day;
+                final isNextMonth = date.month != displayedMonth.month;
+
+                return GestureDetector(
+                  onTap: () => setState(() => selectedDate = date),
+                  child: Container(
+                    width: 60,
+                    margin: EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? currentCategoryColor
+                          : isToday
+                              ? currentCategoryColor.withOpacity(0.1)
+                              : isNextMonth
+                                  ? Colors.grey[100]
+                                  : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        if (isSelected)
+                          BoxShadow(
+                            color: currentCategoryColor.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          )
+                        else if (isToday)
+                          BoxShadow(
+                            color: currentCategoryColor.withOpacity(0.15),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          )
+                        else
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          [
+                            'Mon',
+                            'Tue',
+                            'Wed',
+                            'Thu',
+                            'Fri',
+                            'Sat',
+                            'Sun'
+                          ][date.weekday - 1],
                           style: GoogleFonts.inter(
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                            color: isSelected
+                                ? Colors.white.withOpacity(0.9)
+                                : isNextMonth
+                                    ? Colors.grey[400]
+                                    : Colors.grey[600],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
                             letterSpacing: -0.3,
                           ),
                         ),
-                      ),
-                    ))
-                .toList(),
-          ),
-        ),
-        SizedBox(height: 12),
-        Container(
-          height: 100,
-          child: ListView.builder(
-            controller: _calendarScrollController,
-            scrollDirection: Axis.horizontal,
-            itemCount: orderedDates.length,
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            itemBuilder: (context, index) {
-              final date = orderedDates[index];
-              final isSelected = selectedDate.year == date.year &&
-                  selectedDate.month == date.month &&
-                  selectedDate.day == date.day;
-              final isToday = date.year == today.year &&
-                  date.month == today.month &&
-                  date.day == today.day;
-              final isNextMonth = date.month != displayedMonth.month;
-
-              return GestureDetector(
-                onTap: () => setState(() => selectedDate = date),
-                child: Container(
-                  width: 60,
-                  margin: EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? currentCategoryColor
-                        : isToday
-                            ? currentCategoryColor.withOpacity(0.1)
-                            : isNextMonth
-                                ? Colors.grey[100]
-                                : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      if (isSelected)
-                        BoxShadow(
-                          color: currentCategoryColor.withOpacity(0.3),
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        )
-                      else if (isToday)
-                        BoxShadow(
-                          color: currentCategoryColor.withOpacity(0.15),
-                          blurRadius: 8,
-                          offset: Offset(0, 2),
-                        )
-                      else
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
-                          blurRadius: 6,
-                          offset: Offset(0, 2),
-                        ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        [
-                          'Mon',
-                          'Tue',
-                          'Wed',
-                          'Thu',
-                          'Fri',
-                          'Sat',
-                          'Sun'
-                        ][date.weekday - 1],
-                        style: GoogleFonts.inter(
-                          color: isSelected
-                              ? Colors.white.withOpacity(0.9)
-                              : isNextMonth
-                                  ? Colors.grey[400]
-                                  : Colors.grey[600],
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      SizedBox(height: 6),
-                      Text(
-                        '${date.day}',
-                        style: GoogleFonts.poppins(
-                          color: isSelected
-                              ? Colors.white
-                              : isToday
-                                  ? currentCategoryColor
-                                  : isNextMonth
-                                      ? Colors.grey[400]
-                                      : Colors.black87,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          height: 1,
-                        ),
-                      ),
-                      if (_hasTasksOnDate(date)) ...[
                         SizedBox(height: 6),
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                        Text(
+                          '${date.day}',
+                          style: GoogleFonts.poppins(
                             color: isSelected
                                 ? Colors.white
-                                : currentCategoryColor,
-                            boxShadow: [
-                              BoxShadow(
-                                color: (isSelected
-                                        ? Colors.black
-                                        : currentCategoryColor)
-                                    .withOpacity(0.1),
-                                blurRadius: 2,
-                                offset: Offset(0, 1),
-                              ),
-                            ],
+                                : isToday
+                                    ? currentCategoryColor
+                                    : isNextMonth
+                                        ? Colors.grey[400]
+                                        : Colors.black87,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            height: 1,
                           ),
                         ),
+                        if (_hasTasksOnDate(date)) ...[
+                          SizedBox(height: 6),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isSelected
+                                  ? Colors.white
+                                  : currentCategoryColor,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isSelected
+                                          ? Colors.black
+                                          : currentCategoryColor)
+                                      .withOpacity(0.1),
+                                  blurRadius: 2,
+                                  offset: Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -2342,7 +2363,7 @@ class _TodoListState extends State<TodoList> {
                             });
 
                             final uuid = Uuid(); // Define this first
-                            final newScheduledTask = TodoItem(
+                            final newScheduledTask = ScheduleTask(
                               // Define the task before try block
                               id: uuid.v4(),
                               userId: FirebaseAuth.instance.currentUser?.uid ??
@@ -2355,7 +2376,7 @@ class _TodoListState extends State<TodoList> {
                               subtasks: subtaskControllers
                                   .where((controller) =>
                                       controller.text.trim().isNotEmpty)
-                                  .map((controller) => SubTask(
+                                  .map((controller) => ScheduleSubTask(
                                         id: uuid.v4(),
                                         title: controller.text.trim(),
                                       ))
@@ -2368,7 +2389,7 @@ class _TodoListState extends State<TodoList> {
 
                               // Optimistic update - use a new list to avoid modifying the original
                               setState(() {
-                                todos = List<TodoItem>.from(todos)
+                                todos = List<ScheduleTask>.from(todos)
                                   ..add(newScheduledTask);
                               });
 
@@ -2462,8 +2483,6 @@ class _TodoListState extends State<TodoList> {
     final subtaskController = TextEditingController();
     final List<QuickSubTask> subtasks = [];
     bool isLoading = false;
-    bool hasShownSignInMessage =
-        false; // Flag to track if message has been shown
 
     void addSubtask() {
       if (subtaskController.text.trim().isNotEmpty) {
