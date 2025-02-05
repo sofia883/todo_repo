@@ -1,34 +1,53 @@
 import 'package:to_do_app/common_imports.dart';
 
-class LoginPage extends StatefulWidget {
+class SignupPage extends StatefulWidget {
   @override
-  _LoginPageState createState() => _LoginPageState();
+  _SignupPageState createState() => _SignupPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _SignupPageState extends State<SignupPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
   bool _isPasswordVisible = false;
-
-  Future<void> _handleLogin() async {
+  bool _isConfirmPasswordVisible = false;
+  Future<void> _handleSignup() async {
     if (_formKey.currentState!.validate()) {
+      if (_passwordController.text != _confirmPasswordController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Passwords do not match')),
+        );
+        return;
+      }
+
       setState(() => _isLoading = true);
       try {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        UserCredential userCredential =
+            await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
-          password: _passwordController.text,
+          password: _passwordController.text.trim(),
         );
+
+        // Update display name
+        await userCredential.user
+            ?.updateDisplayName(_nameController.text.trim());
+        await userCredential.user
+            ?.reload(); // Ensure update reflects immediately
+
         if (mounted) {
-          // Clear the navigation stack and go to welcome page
           Navigator.pushNamedAndRemoveUntil(
-              context, '/welcome', (route) => false);
+            context,
+            '/welcome',
+            (route) => false,
+          );
         }
       } on FirebaseAuthException catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.message ?? 'Login failed')),
+            SnackBar(content: Text(e.message ?? 'Signup failed')),
           );
         }
       } finally {
@@ -39,28 +58,8 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _skipLogin() async {
-    try {
-      // Generate a unique guest ID
-      final guestId = 'guest_${const Uuid().v4()}';
-
-      // Save guest ID to shared preferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('guest_user_id', guestId);
-
-      // Navigate to home screen
-      if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/home');
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create guest session: $e')),
-      );
-    }
-  }
-
   @override
-  build(BuildContext context) {
+  Widget build(BuildContext context) {
     return Scaffold(
       body: AuthGradientBackground(
         child: SafeArea(
@@ -72,14 +71,11 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.lock_outline,
-                      size: 80,
-                      color: Colors.white,
-                    ),
+                    Icon(Icons.person_add_outlined,
+                        size: 80, color: Colors.white),
                     SizedBox(height: 32),
                     Text(
-                      'Welcome Back',
+                      'Create Account',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -87,6 +83,33 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                     SizedBox(height: 40),
+                    // Full Name Field
+                    TextFormField(
+                      controller: _nameController,
+                      keyboardType: TextInputType.name,
+                      style: TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Full Name',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        prefixIcon:
+                            Icon(Icons.person, color: Color(0xFFF29393)),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white24),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Color(0xFF8B008B)),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your full name';
+                        }
+                        return null;
+                      },
+                    ),
+                    SizedBox(height: 20),
                     // Email Field
                     TextFormField(
                       controller: _emailController,
@@ -95,17 +118,14 @@ class _LoginPageState extends State<LoginPage> {
                       decoration: InputDecoration(
                         labelText: 'Email',
                         labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.email,
-                            color: Color(0xFFFFB7C5)), // Soft pink
-
+                        prefixIcon: Icon(Icons.email, color: Color(0xFFF29393)),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(color: Colors.white24),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                              color: Color(0xFFC2AAE8)), // Medium purple
+                          borderSide: BorderSide(color: Color(0xFF8B008B)),
                         ),
                       ),
                       validator: (value) {
@@ -130,14 +150,56 @@ class _LoginPageState extends State<LoginPage> {
                         prefixIcon: Icon(Icons.lock, color: Color(0xFFF29393)),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _isPasswordVisible
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: AppColors.iconColor,
-                          ),
+                              _isPasswordVisible
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: AppColors.iconColor),
                           onPressed: () {
                             setState(() {
                               _isPasswordVisible = !_isPasswordVisible;
+                            });
+                          },
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white24),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Color(0xFFC2AAE8)),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your password';
+                        }
+                        if (value.length < 6) {
+                          return 'Password must be at least 6 characters';
+                        }
+                        return null;
+                      },
+                    ),
+                    SizedBox(height: 20),
+                    // Confirm Password Field
+                    TextFormField(
+                      controller: _confirmPasswordController,
+                      obscureText: !_isConfirmPasswordVisible,
+                      style: TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Confirm Password',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        prefixIcon:
+                            Icon(Icons.lock_outline, color: Color(0xFFF29393)),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                              _isConfirmPasswordVisible
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: AppColors.iconColor),
+                          onPressed: () {
+                            setState(() {
+                              _isConfirmPasswordVisible =
+                                  !_isConfirmPasswordVisible;
                             });
                           },
                         ),
@@ -152,40 +214,16 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please enter your password';
+                          return 'Please confirm your password';
                         }
-                        if (value.length < 6) {
-                          return 'Password must be at least 6 characters';
+                        if (value != _passwordController.text) {
+                          return 'Passwords do not match';
                         }
                         return null;
                       },
                     ),
-                    SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ResetPasswordPage(),
-                            ),
-                          );
-                        },
-// Changed from testPasswordReset
-                        child: Text(
-                          'Forgot Password?',
-                          style: TextStyle(
-                            color: Color(0xFFF29393),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 24),
-                    // Login Button
                     ElevatedButton(
-                      onPressed: _isLoading ? null : _handleLogin,
+                      onPressed: _isLoading ? null : _handleSignup,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.buttonBackground,
                         foregroundColor: AppColors.buttonForeground,
@@ -200,7 +238,7 @@ class _LoginPageState extends State<LoginPage> {
                       child: _isLoading
                           ? CircularProgressIndicator(color: Colors.white)
                           : Text(
-                              'Login',
+                              'Sign Up',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -208,31 +246,15 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                     ),
                     SizedBox(height: 20),
-                    // Register Link
+                    // Login Link
                     TextButton(
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                SignupPage(), // Navigate to PhoneAuthScreen
-                          ),
-                        );
+                        Navigator.pop(context);
                       },
                       child: Text(
-                        'Don\'t have an account? Sign Up',
+                        'Already have an account? Login',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _skipLogin,
-                      child: const Text(
-                        'Skip Login',
-                        style: TextStyle(
-                          color: Colors.white70,
                           fontSize: 16,
                         ),
                       ),
@@ -246,11 +268,4 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  } 
 }

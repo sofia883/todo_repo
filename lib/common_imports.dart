@@ -27,6 +27,8 @@ export 'package:to_do_app/screens/home.dart';
 export 'package:to_do_app/screens/login_page.dart';
 export 'package:to_do_app/screens/profile_page.dart';
 export 'package:to_do_app/screens/welcome_page.dart';
+export 'package:to_do_app/screens/sign-up_screen.dart';
+export 'screens/password_reset_screen.dart';
 
 // App Services
 export 'package:to_do_app/services/auth_service.dart';

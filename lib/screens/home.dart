@@ -855,31 +855,31 @@ class _HomePageState extends State<HomePage> {
             child: const Icon(Icons.delete, color: Colors.white),
           ),
           onDismissed: (direction) async {
-            // Store the single deleted task for potential undo
-            final deletedTask =
-                task.copyWith(); // Create a copy to avoid reference issues
+            // Store the task before deletion
+            final deletedTask = task.copyWith();
+
+            // Get the ScaffoldMessenger before any async operations
+            final scaffoldMessenger = ScaffoldMessenger.of(context);
 
             try {
               // Delete the task from the database
               await FirebaseTaskService.deleteQuickTask(task.id);
 
-              if (!context.mounted) return;
+              // Clear existing snackbars
+              scaffoldMessenger.clearSnackBars();
 
-              // Clear existing snackbars to avoid multiple undo options
-              ScaffoldMessenger.of(context).clearSnackBars();
-
-              ScaffoldMessenger.of(context).showSnackBar(
+              // Show the undo snackbar
+              scaffoldMessenger.showSnackBar(
                 SnackBar(
                   content: const Text('Task deleted'),
                   action: SnackBarAction(
                     label: 'UNDO',
                     onPressed: () async {
                       try {
-                        // Only restore this specific deleted task
+                        // Restore the task
                         await FirebaseTaskService.addQuickTask(deletedTask);
 
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        scaffoldMessenger.showSnackBar(
                           const SnackBar(
                             content: Text('Task restored'),
                             backgroundColor: Colors.green,
@@ -887,8 +887,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                         );
                       } catch (e) {
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        scaffoldMessenger.showSnackBar(
                           const SnackBar(
                             content: Text('Failed to restore task'),
                             backgroundColor: Colors.red,
@@ -902,8 +901,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               );
             } catch (e) {
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
+              scaffoldMessenger.showSnackBar(
                 const SnackBar(
                   content: Text('Failed to delete task'),
                   backgroundColor: Colors.red,
@@ -912,6 +910,7 @@ class _HomePageState extends State<HomePage> {
               );
             }
           },
+          // Rest of the Dismissible widget implementation remains the same
           child: Card(
             color: Colors.white,
             elevation: 3.0,
