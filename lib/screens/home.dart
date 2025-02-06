@@ -1144,7 +1144,10 @@ class _HomePageState extends State<HomePage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => ProfilePage(todos: todos)),
+                      builder: (context) => ProfilePage(
+                            scheduledTasks: todos,
+                            quickTasks: _quickTasks,
+                          )),
                 );
               },
               child: CircleAvatar(
@@ -2704,8 +2707,6 @@ class _HomePageState extends State<HomePage> {
                                     createdAt: DateTime.now(),
                                     subtasks: List.from(subtasks),
                                   );
-                                  await Future.delayed(
-                                      const Duration(seconds: 2));
 
                                   // Close the bottom sheet after successful task addition
                                   Navigator.of(context).pop();

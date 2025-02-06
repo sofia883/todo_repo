@@ -6,6 +6,7 @@ class TodoListData {
   List<ScheduleTask> todos;
   String category; // e.g., 'Work', 'Personal', 'Shopping'
   Color categoryColor;
+  
   TodoListData({
     required this.category,
     required this.categoryColor,

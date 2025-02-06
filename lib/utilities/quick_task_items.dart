@@ -7,6 +7,7 @@ class QuickTask {
   final DateTime createdAt;
   final List<QuickSubTask> subtasks;
   bool? isCompleted;
+  
 
   QuickTask({
     required this.id,

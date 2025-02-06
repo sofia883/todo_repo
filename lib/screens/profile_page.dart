@@ -1,8 +1,15 @@
 import 'package:to_do_app/common_imports.dart';
+import 'package:to_do_app/screens/edit_profile_screen.dart';
 
 class ProfilePage extends StatefulWidget {
-  List<ScheduleTask> todos = []; // The list of tasks
-  ProfilePage({Key? key, required this.todos}) : super(key: key);
+  List<ScheduleTask> scheduledTasks;
+  List<QuickTask> quickTasks;
+
+  ProfilePage({
+    Key? key,
+    required this.scheduledTasks,
+    required this.quickTasks,
+  }) : super(key: key);
 
   @override
   _ProfilePageState createState() => _ProfilePageState();
@@ -14,37 +21,302 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   bool _isEditingName = false;
+  bool _isEditingEmail = false;
+  String? _imageUrl;
 
-  // Get the updated tasks after deletion
-  List<ScheduleTask> updatedTasks = LocalStorageService.getScheduledTasks();
   @override
   void initState() {
     super.initState();
-    // Initialize with current user details
     final currentUser = FirebaseAuth.instance.currentUser;
     _nameController.text = currentUser?.displayName ?? 'User Name';
     _emailController.text = currentUser?.email ?? 'user@example.com';
+    _loadUserData();
+    _loadSavedImage();
+  }
+Future<void> _loadUserData() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final prefs = await SharedPreferences.getInstance();
+    
+    setState(() {
+      _nameController.text = prefs.getString('user_name') ?? 
+                            currentUser?.displayName ?? 
+                            'User Name';
+      _emailController.text = prefs.getString('user_email') ?? 
+                             currentUser?.email ?? 
+                             'user@example.com';
+      _imageUrl = prefs.getString('profile_image_url');
+    });
+  }
+
+  Future<void> _loadSavedImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedImagePath = prefs.getString('profile_image_path');
+    if (savedImagePath != null) {
+      setState(() {
+        _profileImage = File(savedImagePath);
+      });
+    }
+  }
+
+  void _navigateToEditProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfilePage(
+          initialName: _nameController.text,
+          initialEmail: _emailController.text,
+          profileImage: _profileImage,
+          imageUrl: _imageUrl,
+          onSave: (name, email, image, url) async {
+            setState(() {
+              _nameController.text = name;
+              _emailController.text = email;
+              _profileImage = image;
+              _imageUrl = url;
+            });
+            
+            // Save to SharedPreferences
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('user_name', name);
+            await prefs.setString('user_email', email);
+            if (image != null) {
+              await prefs.setString('profile_image_path', image.path);
+            }
+            if (url != null) {
+              await prefs.setString('profile_image_url', url);
+            }
+            
+            // Save to Firebase if online
+            try {
+              final user = FirebaseAuth.instance.currentUser;
+              if (user != null) {
+                await user.updateDisplayName(name);
+                await user.updateEmail(email);
+              }
+            } catch (e) {
+              // Handle offline case or errors
+              print('Will sync when online: $e');
+            }
+          },
+        ),
+      ),
+    );
   }
 
   @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 280.0,
+            floating: false,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.primaryTeal, AppColors.primaryPurple],
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(height: 40),
+                    Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: ClipOval(
+                            child: _imageUrl != null
+                                ? Image.network(_imageUrl!, fit: BoxFit.cover)
+                                : _profileImage != null
+                                    ? Image.file(_profileImage!, fit: BoxFit.cover)
+                                    : Icon(Icons.person, size: 50, color: Colors.white),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: _navigateToEditProfile,
+                          child: Container(
+                            padding: EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.edit, size: 20, color: Colors.blue),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      _nameController.text,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      _emailController.text,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _buildTaskOverview(widget.scheduledTasks, widget.quickTasks),
+                  SizedBox(height: 16),
+                  TaskProgressBars(
+                    scheduledTasks: widget.scheduledTasks,
+                    quickTasks: widget.quickTasks,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  // Image picker methods remain the same...
-  // [Previous image picker methods here]
+  Widget _buildTaskOverview(List<ScheduleTask> scheduledTasks, List<QuickTask> quickTasks) {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            "Task Overview",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatCard(
+                "Scheduled Tasks",
+                scheduledTasks.length.toString(),
+                AppColors.primaryTeal,
+              ),
+              _buildStatCard(
+                "Quick Tasks",
+                quickTasks.length.toString(),
+                AppColors.primaryPurple,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String count, Color color) {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(
+            count,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }  Future<void> _saveImage(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('profile_image_path', path);
+  }
+
+  Future<void> _updateUserProfile() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.updateDisplayName(_nameController.text);
+        if (_isEditingEmail) {
+          await user.updateEmail(_emailController.text);
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Profile updated successfully')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating profile: $e')),
+      );
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     try {
-      // Request permissions first
+      // Request appropriate permission based on source
       PermissionStatus status;
       if (source == ImageSource.camera) {
         status = await Permission.camera.request();
       } else {
-        status = await Permission.storage.request();
+        // For gallery - check Android version for appropriate permission
+        if (Platform.isAndroid) {
+          if (await Permission.photos.request().isGranted) {
+            status = PermissionStatus.granted;
+          } else {
+            // Try legacy storage permission as fallback
+            status = await Permission.storage.request();
+          }
+        } else {
+          // For iOS or other platforms
+          status = await Permission.photos.request();
+        }
       }
 
       if (status.isGranted) {
+        // Permission granted, proceed with image picking
         final pickedFile = await _picker.pickImage(
           source: source,
           maxWidth: 800,
@@ -55,38 +327,101 @@ class _ProfilePageState extends State<ProfilePage> {
         if (pickedFile != null) {
           setState(() {
             _profileImage = File(pickedFile.path);
+            _imageUrl = null;
           });
+          await _saveImage(pickedFile.path); // Save the image path
+        }
+      } else if (status.isPermanentlyDenied) {
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: Text('Permission Required'),
+                content: Text(source == ImageSource.camera
+                    ? 'Camera permission is required to take photos. Please enable it in settings.'
+                    : 'Gallery permission is required to pick images. Please enable it in settings.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => openAppSettings(),
+                    child: Text('Open Settings'),
+                  ),
+                ],
+              );
+            },
+          );
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Permission denied. Please enable it in settings.'),
-            action: SnackBarAction(
-              label: 'Settings',
-              onPressed: () => openAppSettings(),
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(source == ImageSource.camera
+                  ? 'Camera permission denied'
+                  : 'Gallery permission denied'),
+              action: SnackBarAction(
+                label: 'Settings',
+                onPressed: () => openAppSettings(),
+              ),
             ),
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
-      print('Error picking image: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to pick image. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
     }
+  }
+
+  Future<void> _uploadImageFromUrl() async {
+    final TextEditingController urlController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Enter Image URL'),
+        content: TextField(
+          controller: urlController,
+          decoration: InputDecoration(
+            hintText: 'https://example.com/image.jpg',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _imageUrl = urlController.text;
+                _profileImage = null;
+              });
+              Navigator.pop(context);
+            },
+            child: Text('Upload'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showImagePickerOptions() {
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
-        child: Wrap(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Icons.photo_camera),
+              leading: Icon(Icons.photo_camera, color: Colors.blue),
               title: Text('Take a photo'),
               onTap: () {
                 Navigator.pop(context);
@@ -94,11 +429,19 @@ class _ProfilePageState extends State<ProfilePage> {
               },
             ),
             ListTile(
-              leading: Icon(Icons.photo_library),
+              leading: Icon(Icons.photo_library, color: Colors.blue),
               title: Text('Choose from gallery'),
               onTap: () {
                 Navigator.pop(context);
                 _pickImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.link, color: Colors.blue),
+              title: Text('Upload from URL'),
+              onTap: () {
+                Navigator.pop(context);
+                _uploadImageFromUrl();
               },
             ),
           ],
@@ -107,460 +450,129 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Color(0xFFF5F7FF),
-      body: StreamBuilder<List<ScheduleTask>>(
-        stream: FirebaseTaskService.getScheduledTasksStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          // Debug print to check if the stream has received updated data
-          print('Stream Data: ${snapshot.data}');
-
-          return CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                expandedHeight: 250.0,
-                floating: false,
-                pinned: true,
-                flexibleSpace: FlexibleSpaceBar(
-                  background: _buildProfileHeader(),
-                  title: Text(
-                    _nameController.text,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  centerTitle: true,
-                ),
-                backgroundColor: Colors.indigo, // Indigo app bar
-              ),
-              SliverToBoxAdapter(
-                child: _buildProgressSection(widget.todos),
-              ),
-              SliverToBoxAdapter(child: _buildLogoutDeleteButtons())
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildProfileHeader() {
+  Widget _buildTaskProgressBars(
+      List<ScheduleTask> scheduledTasks, List<QuickTask> quickTasks) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.indigo],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
+      padding: EdgeInsets.all(16),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildProfileImage(),
-          SizedBox(height: 10),
-          _buildNameEmailSection(),
+          Text(
+            'YOUR PROGRESS',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          SizedBox(height: 20),
+          TaskProgressBars(
+            scheduledTasks: scheduledTasks,
+            quickTasks: quickTasks,
+          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildProfileImage() {
-    return Stack(
-      alignment: Alignment.bottomRight,
-      children: [
-        Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-            image: _profileImage != null
-                ? DecorationImage(
-                    image: FileImage(_profileImage!),
-                    fit: BoxFit.cover,
-                  )
-                : null,
-          ),
-          child: _profileImage == null
-              ? Icon(
-                  Icons.person,
-                  size: 60,
-                  color: Colors.indigo[200],
-                )
-              : null,
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 5,
-                ),
-              ],
-            ),
-            child: IconButton(
-              icon: Icon(
-                Icons.camera_alt,
-                color: Colors.indigo,
-              ),
-              onPressed: _showImagePickerOptions,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
   Widget _buildNameEmailSection() {
-    return Padding(
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(15),
+      ),
       child: Column(
         children: [
           // Name Section
-          _isEditingName
-              ? TextField(
-                  controller: _nameController,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                  decoration: InputDecoration(
-                    border: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.white),
-                    ),
-                    suffixIcon: IconButton(
-                      icon: Icon(Icons.check, color: Colors.white),
-                      onPressed: () {
-                        setState(() {
-                          _isEditingName = false;
-                          // TODO: Update display name in Firebase
-                        });
-                      },
-                    ),
-                  ),
-                )
-              : GestureDetector(
-                  onTap: () => setState(() => _isEditingName = true),
-                  child: Text(
-                    _nameController.text,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-          SizedBox(height: 10),
+          _buildEditableField(
+            controller: _nameController,
+            isEditing: _isEditingName,
+            onEdit: () => setState(() => _isEditingName = true),
+            onSave: () async {
+              setState(() => _isEditingName = false);
+              await _updateUserProfile();
+            },
+            icon: Icons.person,
+            label: 'Name',
+          ),
+          SizedBox(height: 15),
           // Email Section
-          Text(
-            _emailController.text,
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 16,
-            ),
+          _buildEditableField(
+            controller: _emailController,
+            isEditing: _isEditingEmail,
+            onEdit: () => setState(() => _isEditingEmail = true),
+            onSave: () async {
+              setState(() => _isEditingEmail = false);
+              await _updateUserProfile();
+            },
+            icon: Icons.email,
+            label: 'Email',
           ),
         ],
       ),
     );
   }
 
-  Widget _buildProgressSection(List<ScheduleTask> todos) {
-    final completedTasks = todos.where((todo) => todo.isCompleted).toList();
-    final pendingTasks = _getPendingTasks(todos);
-    final overdueTasks = _getOverdueTasks(todos);
-
-    // Calculate progress percentages
-    final totalTasks = todos.length;
-    final completionRate = totalTasks > 0
-        ? (completedTasks.length / totalTasks * 100).toStringAsFixed(1)
-        : '0.0';
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: NeverScrollableScrollPhysics(),
-        childAspectRatio: 1.2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        children: [
-          _buildProgressCard(
-            title: 'Completed Tasks',
-            count: completedTasks.length.toString(),
-            icon: Icons.check_circle,
-            color: Colors.green,
-            onTap: () =>
-                _showTaskDetailsBottomSheet('Completed Tasks', completedTasks),
+  Widget _buildSettingsButton() {
+    return Container(
+      margin: EdgeInsets.only(top: 20),
+      child: ElevatedButton.icon(
+        onPressed: () {
+          Navigator.pushNamed(context, '/settings');
+        },
+        icon: Icon(Icons.settings, color: Colors.white),
+        label: Text('Settings'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primaryTeal,
+          padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(30),
           ),
-          _buildProgressCard(
-            title: 'Pending Tasks',
-            count: pendingTasks.length.toString(),
-            icon: Icons.pending_actions,
-            color: Colors.orange,
-            onTap: () =>
-                _showTaskDetailsBottomSheet('Pending Tasks', pendingTasks),
-          ),
-          _buildProgressCard(
-            title: 'Overdue Tasks',
-            count: overdueTasks.length.toString(),
-            icon: Icons.warning_amber_rounded,
-            color: Colors.red,
-            onTap: () =>
-                _showTaskDetailsBottomSheet('Overdue Tasks', overdueTasks),
-          ),
-          _buildProgressCard(
-            title: 'Progress',
-            count: '$completionRate%',
-            icon: Icons.timeline,
-            color: Colors.blue,
-            onTap: _showProgressDetailsBottomSheet,
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildProgressCard({
-    required String title,
-    required String count,
+  Widget _buildEditableField({
+    required TextEditingController controller,
+    required bool isEditing,
+    required VoidCallback onEdit,
+    required VoidCallback onSave,
     required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
+    required String label,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 10,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: color,
-                size: 40,
-              ),
-            ),
-            SizedBox(height: 10),
-            Text(
-              count,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            SizedBox(height: 5),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[700],
-              ),
-            ),
-          ],
-        ),
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
       ),
-    );
-  }
-
-  void _showTaskDetailsBottomSheet(String title, List<ScheduleTask> tasks) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        builder: (_, controller) => Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Bottom sheet handle
-              Container(
-                width: 40,
-                height: 5,
-                margin: EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  controller: controller,
-                  itemCount: tasks.length,
-                  itemBuilder: (context, index) {
-                    final task = tasks[index];
-                    return ListTile(
-                      title: Text(task.title),
-                      subtitle: Text(
-                        'Due: ${DateFormat('MMM dd, yyyy').format(task.dueDate)}',
-                      ),
-                      trailing: task.isCompleted
-                          ? Icon(Icons.check_circle, color: Colors.green)
-                          : Icon(Icons.pending, color: Colors.orange),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showProgressDetailsBottomSheet() {
-    final todos = widget.todos;
-    final totalTasks = todos.length;
-    final completedTasks = todos.where((todo) => todo.isCompleted).length;
-    final pendingTasks = _getPendingTasks(todos).length;
-    final overdueTasks = _getOverdueTasks(todos).length;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Task Progress Overview',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 20),
-            _buildProgressDetailItem(
-              'Total Tasks',
-              totalTasks,
-              Colors.blue,
-            ),
-            _buildProgressDetailItem(
-              'Completed Tasks',
-              completedTasks,
-              Colors.green,
-            ),
-            _buildProgressDetailItem(
-              'Pending Tasks',
-              pendingTasks,
-              Colors.orange,
-            ),
-            _buildProgressDetailItem(
-              'Overdue Tasks',
-              overdueTasks,
-              Colors.red,
-            ),
-            SizedBox(height: 20),
-            LinearProgressIndicator(
-              value: totalTasks > 0 ? completedTasks / totalTasks : 0,
-              backgroundColor: Colors.grey[300],
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-              minHeight: 10,
-            ),
-            SizedBox(height: 10),
-            Center(
-              child: Text(
-                '${(totalTasks > 0 ? completedTasks / totalTasks * 100 : 0).toStringAsFixed(1)}% Completed',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProgressDetailItem(String label, int count, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey[700],
-            ),
+          Icon(icon, color: Colors.white70, size: 20),
+          SizedBox(width: 10),
+          Expanded(
+            child: isEditing
+                ? TextField(
+                    controller: controller,
+                    style: TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      hintText: label,
+                      hintStyle: TextStyle(color: Colors.white54),
+                    ),
+                  )
+                : Text(
+                    controller.text,
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
           ),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(15),
+          IconButton(
+            icon: Icon(
+              isEditing ? Icons.check : Icons.edit,
+              color: Colors.white70,
             ),
-            child: Text(
-              count.toString(),
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            onPressed: isEditing ? onSave : onEdit,
           ),
         ],
       ),
@@ -568,33 +580,6 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // Helper methods for task filtering remain the same...
-  List<ScheduleTask> _getOverdueTasks(List<ScheduleTask> todos) {
-    return todos.where((task) => _isTaskOverdue(task)).toList();
-  }
-
-  bool _isTaskOverdue(ScheduleTask task) {
-    if (task.isCompleted) return false;
-    final now = DateTime.now();
-    final taskDueDateTime = DateTime(
-      task.dueDate.year,
-      task.dueDate.month,
-      task.dueDate.day,
-      task.dueTime?.hour ?? 23,
-      task.dueTime?.minute ?? 59,
-    );
-    return taskDueDateTime.isBefore(now);
-  }
-
-  List<ScheduleTask> _getPendingTasks(List<ScheduleTask> todos) {
-    return todos
-        .where((task) =>
-                !task.isCompleted && // Not completed
-                !_isTaskOverdue(task) // Not overdue
-            )
-        .toList();
-  }
-
-// Your logout function
   Widget _buildLogoutDeleteButtons() {
     final currentUser = FirebaseAuth.instance.currentUser;
 
@@ -738,7 +723,8 @@ class _ProfilePageState extends State<ProfilePage> {
       // Close loading indicator after 2 seconds
       await Future.delayed(Duration(seconds: 2));
       setState(() {
-        widget.todos = []; // Set todos to empty list immediately
+        widget.scheduledTasks = [];
+        widget.quickTasks = []; // Set todos to empty list immediately
       });
 
       Navigator.of(context, rootNavigator: true)
@@ -794,7 +780,8 @@ class _ProfilePageState extends State<ProfilePage> {
       // Navigate to the login page and clear tasks
       Navigator.pushReplacementNamed(context, '/login').then((_) {
         setState(() {
-          widget.todos = [];
+          widget.scheduledTasks = [];
+          widget.quickTasks = [];
         });
       });
     } catch (e) {
@@ -821,5 +808,347 @@ class _ProfilePageState extends State<ProfilePage> {
     Future.delayed(Duration(seconds: 2), () {
       Navigator.of(context).pop(); // Dismiss the dialog
     });
+  }
+
+  Widget _buildProfileImage() {
+    return Stack(
+      alignment: Alignment.bottomRight,
+      children: [
+        Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: _imageUrl != null
+                ? Image.network(_imageUrl!, fit: BoxFit.cover)
+                : _profileImage != null
+                    ? Image.file(_profileImage!, fit: BoxFit.cover)
+                    : Container(
+                        color: Colors.white,
+                        child: Icon(
+                          Icons.person,
+                          size: 60,
+                          color: Colors.blue.shade200,
+                        ),
+                      ),
+          ),
+        ),
+        GestureDetector(
+          onTap: _showImagePickerOptions,
+          child: Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.camera_alt,
+              size: 20,
+              color: Colors.blue,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Helper methods for showing dialogs and error messages
+  void _showPermissionDeniedDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Permission Required'),
+          content: Text('Please enable required permissions in settings.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => openAppSettings(),
+              child: Text('Open Settings'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+class TaskProgressBars extends StatelessWidget {
+  final List<ScheduleTask> scheduledTasks;
+  final List<QuickTask> quickTasks;
+
+  const TaskProgressBars({
+    Key? key,
+    required this.scheduledTasks,
+    required this.quickTasks,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Progress Overview',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        SizedBox(height: 20),
+
+        // Scheduled Tasks Progress (with overdue tracking)
+        _buildScheduledTasksProgress(
+          'Scheduled Tasks',
+          scheduledTasks.where((task) => task.isCompleted).length,
+          scheduledTasks
+              .where((task) =>
+                  !task.isCompleted && !task.dueDate.isBefore(DateTime.now()))
+              .length,
+          scheduledTasks
+              .where((task) =>
+                  !task.isCompleted && task.dueDate.isBefore(DateTime.now()))
+              .length,
+          scheduledTasks.length,
+        ),
+
+        SizedBox(height: 24),
+
+        // Quick Tasks Progress (simplified without overdue)
+        _buildQuickTasksProgress(
+          'Quick Tasks',
+          quickTasks.where((task) => task.isCompleted ?? false).length,
+          quickTasks.where((task) => !(task.isCompleted ?? false)).length,
+          quickTasks.length,
+        ),
+
+        SizedBox(height: 20),
+
+        // Legend
+        _buildLegend(),
+      ],
+    );
+  }
+
+  Widget _buildScheduledTasksProgress(
+    String title,
+    int completed,
+    int pending,
+    int overdue,
+    int total,
+  ) {
+    // Calculate percentages
+    double completedPercent = total > 0 ? (completed / total) * 100 : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              '${completedPercent.toStringAsFixed(0)}%',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 8),
+        Container(
+          height: 24,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                // Completed section
+                Flexible(
+                  flex: completed,
+                  child: Container(color: Colors.green),
+                ),
+                // Pending section
+                Flexible(
+                  flex: pending,
+                  child: Container(color: Colors.orange),
+                ),
+                // Overdue section
+                Flexible(
+                  flex: overdue,
+                  child: Container(color: Colors.red),
+                ),
+                // Empty space if total is 0
+                if (total == 0)
+                  Expanded(
+                    child: Container(color: Colors.grey.withOpacity(0.2)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildQuickTasksProgress(
+    String title,
+    int completed,
+    int pending,
+    int total,
+  ) {
+    // Calculate percentage
+    double completedPercent = total > 0 ? (completed / total) * 100 : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              '${completedPercent.toStringAsFixed(0)}%',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 8),
+        Container(
+          height: 24,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                // Completed section
+                Flexible(
+                  flex: completed,
+                  child: Container(color: Colors.green),
+                ),
+                // Pending section
+                Flexible(
+                  flex: pending,
+                  child: Container(color: Colors.orange),
+                ),
+                // Empty space if total is 0
+                if (total == 0)
+                  Expanded(
+                    child: Container(color: Colors.grey.withOpacity(0.2)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildStatusText('Completed', completed),
+            _buildStatusText('Pending', pending),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusText(String label, int count) {
+    return Text(
+      '$label: $count',
+      style: TextStyle(
+        fontSize: 12,
+        color: Colors.white70,
+      ),
+    );
+  }
+
+  Widget _buildLegend() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      children: [
+        _buildLegendItem('Completed', Colors.green),
+        SizedBox(width: 16),
+        _buildLegendItem('Pending', Colors.orange),
+        SizedBox(width: 16),
+        _buildLegendItem('Overdue', Colors.red),
+      ],
+    );
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
   }
 }

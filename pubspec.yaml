@@ -52,6 +52,8 @@ dependencies:
   google_sign_in: ^6.1.6
   google_fonts: ^6.2.1
   percent_indicator: ^4.2.4 
+  firebase_storage: ^12.4.1
+  cloudinary_public: ^0.23.1
   rxdart: ^0.27.7
   uuid: ^4.5.1
 dev_dependencies:
