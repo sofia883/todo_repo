@@ -35,7 +35,7 @@ final class AppColors {
 
   // Button Colors
   static const Color buttonText = Colors.white;
-  static const Color buttonBackground = Color(0xFF9B59B6);
+  static const Color buttonBackground = Color.fromARGB(255, 146, 104, 160);
   static const Color buttonForeground = Colors.white;
 
   // Icon Colors
@@ -43,10 +43,10 @@ final class AppColors {
   static const Color iconColorSecondary = Color(0xFF9B59B6);
 }
 
-class AuthGradientBackground extends StatelessWidget {
+class GradientBackground extends StatelessWidget {
   final Widget child;
 
-  const AuthGradientBackground({required this.child});
+  const GradientBackground({required this.child});
 
   @override
   Widget build(BuildContext context) {

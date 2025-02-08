@@ -1,4 +1,7 @@
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:to_do_app/common_imports.dart';
+import 'package:image/image.dart' as img_lib;
 
 class FirebaseTaskService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -560,6 +563,113 @@ class FirebaseTaskService {
       throw Exception('Failed to delete user data and account: $e');
     }
   }
+ static Future<String?> uploadProfileImage(File imageFile) async {
+    if (!_isAuthenticated || !_isOnline) {
+      return await LocalStorageService.saveProfileImage(imageFile);
+    }
+
+    try {
+      // Create storage reference with proper path structure
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('users') // Add users folder
+          .child(_userId) // Add user-specific folder
+          .child('profile_image.jpg'); // Fixed filename
+
+      // Compress image before upload
+      final compressedFile = await compressImage(imageFile);
+      
+      // Create metadata
+      final metadata = SettableMetadata(
+        contentType: 'image/jpeg',
+        customMetadata: {
+          'uploadedBy': _userId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+
+      // Upload to Firebase with metadata
+      final uploadTask = storageRef.putFile(compressedFile, metadata);
+      
+      // Monitor upload progress if needed
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        print('Upload progress: ${snapshot.bytesTransferred}/${snapshot.totalBytes}');
+      });
+
+      // Wait for upload to complete
+      await uploadTask;
+      
+      // Get download URL
+      final downloadUrl = await storageRef.getDownloadURL();
+
+      // Save locally for offline access
+      await LocalStorageService.saveProfileImage(imageFile);
+
+      return downloadUrl;
+    } on FirebaseException catch (e) {
+      print('Firebase Storage Error: ${e.code} - ${e.message}');
+      
+      // Handle specific error cases
+      switch (e.code) {
+        case 'object-not-found':
+          throw Exception('Storage path not found. Please check storage rules.');
+        case 'unauthorized':
+          throw Exception('Not authorized to upload. Please check storage rules.');
+        case 'canceled':
+          throw Exception('Upload was cancelled.');
+        default:
+          throw Exception('Failed to upload image: ${e.message}');
+      }
+    } catch (e) {
+      print('Failed to upload profile image: $e');
+      throw Exception('Failed to upload profile image: $e');
+    }
+  }
+
+  static Future<File> compressImage(File file) async {
+    final bytes = await file.readAsBytes();
+    final image = img_lib.decodeImage(bytes);
+    
+    if (image == null) throw Exception('Failed to decode image');
+
+    // Compress image to reasonable size (e.g., max 800x800)
+    final resized = image.width > 800 || image.height > 800
+        ? img_lib.copyResize(
+            image,
+            width: image.width > image.height ? 800 : null,
+            height: image.height >= image.width ? 800 : null,
+          )
+        : image;
+
+    // Encode as JPG with quality 85
+    final compressed = img_lib.encodeJpg(resized, quality: 85);
+    
+    // Save compressed image to temporary file
+    final tempPath = file.path.replaceAll('.jpg', '_compressed.jpg');
+    final compressedFile = File(tempPath);
+    await compressedFile.writeAsBytes(compressed);
+    
+    return compressedFile;
+  }
+
+  static Future<String?> getProfileImageUrl() async {
+    if (!_isAuthenticated || !_isOnline) {
+      // Return local path if not authenticated or offline
+      return await LocalStorageService.getProfileImage();
+    }
+
+    try {
+      // Try to get Firebase Storage URL
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('profile_images')
+          .child('${_userId}.jpg');
+      return await storageRef.getDownloadURL();
+    } catch (e) {
+      // Fall back to local storage if Firebase fails
+      return await LocalStorageService.getProfileImage();
+    }
+  }
 
   // Firebase references
   static CollectionReference get _scheduledTasksRef =>
@@ -642,5 +752,54 @@ class LocalStorageService {
 
     // Optionally, clear the local user ID if desired
     await _prefs.remove(LOCAL_USER_ID_KEY);
+  }
+
+  static const String PROFILE_IMAGE_KEY = 'profile_image';
+
+  static Future<String?> saveProfileImage(File imageFile) async {
+    try {
+      final userId = await getCurrentUserId();
+      final directory = await getApplicationDocumentsDirectory();
+      final imagePath = '${directory.path}/profile_$userId.jpg';
+
+      // Copy image file to app directory
+      await imageFile.copy(imagePath);
+
+      // Save path in SharedPreferences
+      await _prefs.setString('${PROFILE_IMAGE_KEY}_$userId', imagePath);
+
+      return imagePath;
+    } catch (e) {
+      print('Failed to save profile image locally: $e');
+      return null;
+    }
+  }
+
+  static Future<String?> getProfileImage() async {
+    try {
+      final userId = await getCurrentUserId();
+      return _prefs.getString('${PROFILE_IMAGE_KEY}_$userId');
+    } catch (e) {
+      print('Failed to get profile image path: $e');
+      return null;
+    }
+  }
+
+  static Future<void> deleteProfileImage() async {
+    try {
+      final userId = await getCurrentUserId();
+      final imagePath = await getProfileImage();
+
+      if (imagePath != null) {
+        final imageFile = File(imagePath);
+        if (await imageFile.exists()) {
+          await imageFile.delete();
+        }
+      }
+
+      await _prefs.remove('${PROFILE_IMAGE_KEY}_$userId');
+    } catch (e) {
+      print('Failed to delete profile image: $e');
+    }
   }
 }

@@ -34,33 +34,6 @@ class _HomePageState extends State<HomePage> {
     return prefs.getBool('hasShownUnauthenticatedWarning') ?? false;
   }
 
-// Update the timer check method
-  bool _hasShownUnauthenticatedWarning = false;
-
-  void _showUnauthenticatedWarning(BuildContext context) {
-    if (_hasShownUnauthenticatedWarning)
-      return; // Don't show again if flag is set
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'User not authenticated. Task saved locally.',
-          style: GoogleFonts.inter(),
-        ),
-        backgroundColor: Colors.orange,
-        action: SnackBarAction(
-          label: 'Login Now',
-          onPressed: () {
-            // Navigate to the login page
-            Navigator.pushReplacementNamed(context, '/login');
-          },
-          textColor: Colors.white,
-        ),
-        duration: const Duration(seconds: 5),
-      ),
-    );
-  }
-
   void _checkAndUpdateTasksStatus() async {
     final now = DateTime.now();
     bool needsUpdate = false;
@@ -2716,18 +2689,6 @@ class _HomePageState extends State<HomePage> {
                                   setState(() {
                                     isLoading = false;
                                   });
-                                }
-                                // Check network connectivity
-
-                                if (user == null) {
-                                  // Check SharedPreferences for "Don't show again" preference
-                                  _hasShownUnauthenticatedWarning =
-                                      await _checkIfShownAgain();
-
-                                  if (!_hasShownUnauthenticatedWarning) {
-                                    _showUnauthenticatedWarning(context);
-                                  }
-                                  return; // Stop further execution if not authenticated
                                 }
                               },
                         child: isLoading

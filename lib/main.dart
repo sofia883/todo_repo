@@ -1,9 +1,10 @@
 import 'package:to_do_app/common_imports.dart';
+import 'package:to_do_app/services/image_storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-
+await SecureImageStorage.init();
   await LocalStorageService.init(); // Make sure this method exists
 
   // Enable offline persistence

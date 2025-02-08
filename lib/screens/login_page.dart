@@ -1,4 +1,5 @@
 import 'package:to_do_app/common_imports.dart';
+import 'package:to_do_app/services/image_storage_service.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -35,6 +36,7 @@ class _LoginPageState extends State<LoginPage> {
         if (mounted) {
           setState(() => _isLoading = false);
         }
+        // In your login handler
       }
     }
   }
@@ -62,7 +64,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   build(BuildContext context) {
     return Scaffold(
-      body: AuthGradientBackground(
+      body: GradientBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -252,5 +254,5 @@ class _LoginPageState extends State<LoginPage> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
-  } 
+  }
 }

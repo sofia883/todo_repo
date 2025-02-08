@@ -61,7 +61,7 @@ class _SignupPageState extends State<SignupPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: AuthGradientBackground(
+      body: GradientBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(

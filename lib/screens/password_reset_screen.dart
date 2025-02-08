@@ -79,7 +79,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: AuthGradientBackground(
+      body: GradientBackground(
         child: Center(
           child: SingleChildScrollView(
             padding: EdgeInsets.all(24),

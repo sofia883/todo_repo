@@ -33,136 +33,144 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadUserData();
     _loadSavedImage();
   }
-Future<void> _loadUserData() async {
-    final currentUser = FirebaseAuth.instance.currentUser;
+Widget _buildProfileImage() {
+  return Stack(
+    alignment: Alignment.bottomRight,
+    children: [
+      Container(
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipOval(
+          child: _imageUrl != null
+              ? Image.network(_imageUrl!, fit: BoxFit.cover)
+              : _profileImage != null
+                  ? Image.file(_profileImage!, fit: BoxFit.cover)
+                  : Container(
+                      color: Colors.white,
+                      child: Icon(
+                        Icons.person,
+                        size: 60,
+                        color: Colors.blue.shade200,
+                      ),
+                    ),
+        ),
+      ),
+      Positioned(
+        bottom: 0,
+        right: 0,
+        child: GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context, 
+              MaterialPageRoute(
+                builder: (context) => EditProfilePage(
+                  currentName: _nameController.text,
+                  currentEmail: _emailController.text,
+                  profileImage: _profileImage,
+                  imageUrl: _imageUrl,
+                ),
+              ),
+            );
+          },
+          child: Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.edit,
+              size: 20,
+              color: Colors.blue,
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+  Future<void> _saveImage(String path) async {
     final prefs = await SharedPreferences.getInstance();
-    
-    setState(() {
-      _nameController.text = prefs.getString('user_name') ?? 
-                            currentUser?.displayName ?? 
-                            'User Name';
-      _emailController.text = prefs.getString('user_email') ?? 
-                             currentUser?.email ?? 
-                             'user@example.com';
-      _imageUrl = prefs.getString('profile_image_url');
-    });
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser != null) {
+      // Save image with user-specific key
+      await prefs.setString('profile_image_path_${currentUser.uid}', path);
+    }
   }
 
   Future<void> _loadSavedImage() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedImagePath = prefs.getString('profile_image_path');
-    if (savedImagePath != null) {
-      setState(() {
-        _profileImage = File(savedImagePath);
-      });
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser != null) {
+      final savedImagePath =
+          prefs.getString('profile_image_path_${currentUser.uid}');
+      if (savedImagePath != null) {
+        setState(() {
+          _profileImage = File(savedImagePath);
+          _imageUrl = null;
+        });
+      }
     }
   }
 
-  void _navigateToEditProfile() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => EditProfilePage(
-          initialName: _nameController.text,
-          initialEmail: _emailController.text,
-          profileImage: _profileImage,
-          imageUrl: _imageUrl,
-          onSave: (name, email, image, url) async {
-            setState(() {
-              _nameController.text = name;
-              _emailController.text = email;
-              _profileImage = image;
-              _imageUrl = url;
-            });
-            
-            // Save to SharedPreferences
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('user_name', name);
-            await prefs.setString('user_email', email);
-            if (image != null) {
-              await prefs.setString('profile_image_path', image.path);
-            }
-            if (url != null) {
-              await prefs.setString('profile_image_url', url);
-            }
-            
-            // Save to Firebase if online
-            try {
-              final user = FirebaseAuth.instance.currentUser;
-              if (user != null) {
-                await user.updateDisplayName(name);
-                await user.updateEmail(email);
-              }
-            } catch (e) {
-              // Handle offline case or errors
-              print('Will sync when online: $e');
-            }
-          },
-        ),
-      ),
-    );
+  Future<void> _loadUserData() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final prefs = await SharedPreferences.getInstance();
+
+    setState(() {
+      _nameController.text = prefs.getString('user_name') ??
+          currentUser?.displayName ??
+          'User Name';
+      _emailController.text = prefs.getString('user_email') ??
+          currentUser?.email ??
+          'user@example.com';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 280.0,
-            floating: false,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primaryTeal, AppColors.primaryPurple],
-                  ),
-                ),
-                child: Column(
+    return HomePageGradientBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              backgroundColor: Colors.transparent,
+              expandedHeight: 280.0,
+              floating: false,
+              pinned: true,
+              flexibleSpace: FlexibleSpaceBar(
+                background: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     SizedBox(height: 40),
-                    Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        Container(
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: ClipOval(
-                            child: _imageUrl != null
-                                ? Image.network(_imageUrl!, fit: BoxFit.cover)
-                                : _profileImage != null
-                                    ? Image.file(_profileImage!, fit: BoxFit.cover)
-                                    : Icon(Icons.person, size: 50, color: Colors.white),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: _navigateToEditProfile,
-                          child: Container(
-                            padding: EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(Icons.edit, size: 20, color: Colors.blue),
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildProfileImage(), // Use the existing method
                     SizedBox(height: 16),
                     Text(
                       _nameController.text,
                       style: TextStyle(
-                        fontSize: 20,
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: AppColors.textLight,
                       ),
                     ),
                     SizedBox(height: 8),
@@ -170,40 +178,49 @@ Future<void> _loadUserData() async {
                       _emailController.text,
                       style: TextStyle(
                         fontSize: 16,
-                        color: Colors.white70,
+                        color: AppColors.textMuted,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _buildTaskOverview(widget.scheduledTasks, widget.quickTasks),
-                  SizedBox(height: 16),
-                  TaskProgressBars(
-                    scheduledTasks: widget.scheduledTasks,
-                    quickTasks: widget.quickTasks,
-                  ),
-                ],
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _buildTaskOverview(
+                        widget.scheduledTasks, widget.quickTasks),
+                    SizedBox(height: 16),
+                    TaskProgressBars(
+                      scheduledTasks: widget.scheduledTasks,
+                      quickTasks: widget.quickTasks,
+                    ),
+                    SizedBox(height: 16),
+                    _buildNameEmailSection(),
+                    SizedBox(height: 16),
+                    _buildSettingsButton(),
+                    SizedBox(height: 16),
+                    _buildLogoutDeleteButtons(),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildTaskOverview(List<ScheduleTask> scheduledTasks, List<QuickTask> quickTasks) {
+  Widget _buildTaskOverview(
+      List<ScheduleTask> scheduledTasks, List<QuickTask> quickTasks) {
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withOpacity(0.2), // Slightly transparent white
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderColor, width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black12,
@@ -219,6 +236,7 @@ Future<void> _loadUserData() async {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
+              color: AppColors.textLight,
             ),
           ),
           SizedBox(height: 16),
@@ -269,9 +287,6 @@ Future<void> _loadUserData() async {
         ],
       ),
     );
-  }  Future<void> _saveImage(String path) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('profile_image_path', path);
   }
 
   Future<void> _updateUserProfile() async {
@@ -808,64 +823,6 @@ Future<void> _loadUserData() async {
     Future.delayed(Duration(seconds: 2), () {
       Navigator.of(context).pop(); // Dismiss the dialog
     });
-  }
-
-  Widget _buildProfileImage() {
-    return Stack(
-      alignment: Alignment.bottomRight,
-      children: [
-        Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: _imageUrl != null
-                ? Image.network(_imageUrl!, fit: BoxFit.cover)
-                : _profileImage != null
-                    ? Image.file(_profileImage!, fit: BoxFit.cover)
-                    : Container(
-                        color: Colors.white,
-                        child: Icon(
-                          Icons.person,
-                          size: 60,
-                          color: Colors.blue.shade200,
-                        ),
-                      ),
-          ),
-        ),
-        GestureDetector(
-          onTap: _showImagePickerOptions,
-          child: Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 5,
-                ),
-              ],
-            ),
-            child: Icon(
-              Icons.camera_alt,
-              size: 20,
-              color: Colors.blue,
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   // Helper methods for showing dialogs and error messages
