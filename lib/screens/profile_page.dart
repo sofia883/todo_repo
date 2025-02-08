@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:to_do_app/common_imports.dart';
 import 'package:to_do_app/screens/edit_profile_screen.dart';
 
@@ -33,104 +35,6 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadUserData();
     _loadSavedImage();
   }
-Widget _buildProfileImage() {
-  return Stack(
-    alignment: Alignment.bottomRight,
-    children: [
-      Container(
-        width: 120,
-        height: 120,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 4),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 10,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipOval(
-          child: _imageUrl != null
-              ? Image.network(_imageUrl!, fit: BoxFit.cover)
-              : _profileImage != null
-                  ? Image.file(_profileImage!, fit: BoxFit.cover)
-                  : Container(
-                      color: Colors.white,
-                      child: Icon(
-                        Icons.person,
-                        size: 60,
-                        color: Colors.blue.shade200,
-                      ),
-                    ),
-        ),
-      ),
-      Positioned(
-        bottom: 0,
-        right: 0,
-        child: GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context, 
-              MaterialPageRoute(
-                builder: (context) => EditProfilePage(
-                  currentName: _nameController.text,
-                  currentEmail: _emailController.text,
-                  profileImage: _profileImage,
-                  imageUrl: _imageUrl,
-                ),
-              ),
-            );
-          },
-          child: Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 5,
-                ),
-              ],
-            ),
-            child: Icon(
-              Icons.edit,
-              size: 20,
-              color: Colors.blue,
-            ),
-          ),
-        ),
-      ),
-    ],
-  );
-}
-  Future<void> _saveImage(String path) async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    if (currentUser != null) {
-      // Save image with user-specific key
-      await prefs.setString('profile_image_path_${currentUser.uid}', path);
-    }
-  }
-
-  Future<void> _loadSavedImage() async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    if (currentUser != null) {
-      final savedImagePath =
-          prefs.getString('profile_image_path_${currentUser.uid}');
-      if (savedImagePath != null) {
-        setState(() {
-          _profileImage = File(savedImagePath);
-          _imageUrl = null;
-        });
-      }
-    }
-  }
 
   Future<void> _loadUserData() async {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -159,27 +63,34 @@ Widget _buildProfileImage() {
               floating: false,
               pinned: true,
               flexibleSpace: FlexibleSpaceBar(
-                background: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                background: Stack(
+                  alignment: Alignment.center,
                   children: [
-                    SizedBox(height: 40),
-                    _buildProfileImage(), // Use the existing method
-                    SizedBox(height: 16),
-                    Text(
-                      _nameController.text,
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textLight,
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.blue.shade300,
+                              Colors.purple.shade400
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
+                        ),
                       ),
                     ),
-                    SizedBox(height: 8),
-                    Text(
-                      _emailController.text,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textMuted,
+                    Positioned.fill(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(color: Colors.white.withOpacity(0.1)),
                       ),
+                    ),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildProfileImage(),
+                      ],
                     ),
                   ],
                 ),
@@ -211,6 +122,22 @@ Widget _buildProfileImage() {
         ),
       ),
     );
+  }
+
+  Future<void> _loadSavedImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser != null) {
+      final savedImagePath =
+          prefs.getString('profile_image_path_${currentUser.uid}');
+      if (savedImagePath != null) {
+        setState(() {
+          _profileImage = File(savedImagePath);
+          _imageUrl = null;
+        });
+      }
+    }
   }
 
   Widget _buildTaskOverview(
@@ -287,6 +214,16 @@ Widget _buildProfileImage() {
         ],
       ),
     );
+  }
+
+  Future<void> _saveImage(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser != null) {
+      // Save image with user-specific key
+      await prefs.setString('profile_image_path_${currentUser.uid}', path);
+    }
   }
 
   Future<void> _updateUserProfile() async {
@@ -825,7 +762,148 @@ Widget _buildProfileImage() {
     });
   }
 
+  Widget _buildProfileImage() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) {
+      return Column(
+        children: [
+          GestureDetector(
+            onTap: () {
+              Navigator.pushNamed(context, '/login');
+            },
+            child: Stack(
+              alignment: Alignment
+                  .bottomRight, // Position the add icon at the bottom right
+              children: [
+                Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.2),
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.account_circle, // Large user icon
+                      color: Colors.white70,
+                      size: 80,
+                    ),
+                  ),
+                ),
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.blue, // Background color for add icon
+                  ),
+                  child: Icon(
+                    Icons.add_circle, // Small add icon
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 8), // Add some spacing
+          Text(
+            "Not signed in?",
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.white,
+            ),
+          ),
+          SizedBox(height: 4),
+        ],
+      );
+    }
+
+    // If user is signed in, show their profile picture
+    return Stack(
+      alignment: Alignment.bottomRight,
+      children: [
+        Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: _imageUrl != null
+                ? Image.network(_imageUrl!, fit: BoxFit.cover)
+                : Container(
+                    color: Colors.white,
+                    child: Icon(
+                      Icons.person,
+                      size: 60,
+                      color: Colors.blue.shade200,
+                    ),
+                  ),
+          ),
+        ),
+        GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EditProfileScreen(
+                    currentName: _nameController.text,
+                    currentEmail: _emailController.text,
+                    currentImage: _profileImage,
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 5,
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.edit,
+                size: 20,
+                color: Colors.grey.shade600,
+              ),
+            )),
+        // ✅ Display User Name
+        Text(
+          _nameController.text.isNotEmpty ? _nameController.text : "User Name",
+          style: TextStyle(
+              fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        SizedBox(height: 4),
+
+        // ✅ Display Email Address
+        Text(
+          _emailController.text.isNotEmpty
+              ? _emailController.text
+              : "user@example.com",
+          style: TextStyle(fontSize: 16, color: Colors.white70),
+        ),
+      ],
+    );
+  }
+
   // Helper methods for showing dialogs and error messages
+  /// Displays a dialog informing the user that a required permission
+  /// is missing and provides options to cancel or open the app
+  /// settings to enable the necessary permissions.
   void _showPermissionDeniedDialog() {
     showDialog(
       context: context,
