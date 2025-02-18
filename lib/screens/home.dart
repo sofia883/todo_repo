@@ -1,4 +1,5 @@
 import 'package:to_do_app/common_imports.dart';
+import 'package:to_do_app/widgets/date_time_picker.dart';
 
 class HomePage extends StatefulWidget {
   final TodoListData? existingTodoList;
@@ -1630,31 +1631,33 @@ class _HomePageState extends State<HomePage> {
                         },
                       ),
                       ListTile(
-                        leading: Icon(Icons.access_time),
-                        title: Text(
-                          'Due Time',
-                          style: GoogleFonts.roboto(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
+                          leading: Icon(Icons.access_time),
+                          title: Text(
+                            'Due Time',
+                            style: GoogleFonts.roboto(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
-                        subtitle: Text(
-                          selectedTime?.format(context) ?? 'No time set',
-                          style: GoogleFonts.sourceCodePro(
-                            fontSize: 14,
-                            color: Colors.grey[700],
+                          subtitle: Text(
+                            selectedTime?.format(context) ?? 'No time set',
+                            style: GoogleFonts.sourceCodePro(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                            ),
                           ),
-                        ),
-                        onTap: () async {
-                          final picked = await showTimePicker(
-                            context: context,
-                            initialTime: selectedTime ?? TimeOfDay.now(),
-                          );
-                          if (picked != null) {
-                            setState(() => selectedTime = picked);
-                          }
-                        },
-                      ),
+                          onTap: () async {
+                            final pickedTime = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.now(),
+                              accentColor: currentCategoryColor,
+                            );
+                            if (pickedTime != null) {
+                              if (pickedTime != null) {
+                                setState(() => selectedTime = pickedTime);
+                              }
+                            }
+                          }),
                       SizedBox(height: 24),
                       Row(
                         children: [
@@ -1749,163 +1752,6 @@ class _HomePageState extends State<HomePage> {
           );
         },
       ),
-    );
-  }
-
-  Widget _buildCalendar() {
-    final today = DateTime.now();
-    final daysInMonth = _getDaysInMonth(displayedMonth);
-
-    List<DateTime> orderedDates = [];
-
-    for (int i = (displayedMonth.year == today.year &&
-                displayedMonth.month == today.month)
-            ? today.day
-            : 1;
-        i <= daysInMonth;
-        i++) {
-      orderedDates.add(DateTime(displayedMonth.year, displayedMonth.month, i));
-    }
-
-    if (orderedDates.length < 30) {
-      final nextMonth = DateTime(displayedMonth.year, displayedMonth.month + 1);
-      final daysToAdd = 31 - orderedDates.length;
-
-      for (int i = 1; i <= daysToAdd; i++) {
-        orderedDates.add(DateTime(nextMonth.year, nextMonth.month, i));
-      }
-    }
-
-    orderedDates = orderedDates.take(31).toList();
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Container(
-            height: 100,
-            child: ListView.builder(
-              controller: _calendarScrollController,
-              scrollDirection: Axis.horizontal,
-              itemCount: orderedDates.length,
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              itemBuilder: (context, index) {
-                final date = orderedDates[index];
-                final isSelected = selectedDate.year == date.year &&
-                    selectedDate.month == date.month &&
-                    selectedDate.day == date.day;
-                final isToday = date.year == today.year &&
-                    date.month == today.month &&
-                    date.day == today.day;
-                final isNextMonth = date.month != displayedMonth.month;
-
-                return GestureDetector(
-                  onTap: () => setState(() => selectedDate = date),
-                  child: Container(
-                    width: 60,
-                    margin: EdgeInsets.only(right: 12),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? currentCategoryColor
-                          : isToday
-                              ? currentCategoryColor.withOpacity(0.1)
-                              : isNextMonth
-                                  ? Colors.grey[100]
-                                  : Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        if (isSelected)
-                          BoxShadow(
-                            color: currentCategoryColor.withOpacity(0.3),
-                            blurRadius: 12,
-                            offset: Offset(0, 4),
-                          )
-                        else if (isToday)
-                          BoxShadow(
-                            color: currentCategoryColor.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: Offset(0, 2),
-                          )
-                        else
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.03),
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
-                          ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          [
-                            'Mon',
-                            'Tue',
-                            'Wed',
-                            'Thu',
-                            'Fri',
-                            'Sat',
-                            'Sun'
-                          ][date.weekday - 1],
-                          style: GoogleFonts.inter(
-                            color: isSelected
-                                ? Colors.white.withOpacity(0.9)
-                                : isNextMonth
-                                    ? Colors.grey[400]
-                                    : Colors.grey[600],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          '${date.day}',
-                          style: GoogleFonts.poppins(
-                            color: isSelected
-                                ? Colors.white
-                                : isToday
-                                    ? currentCategoryColor
-                                    : isNextMonth
-                                        ? Colors.grey[400]
-                                        : Colors.black87,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            height: 1,
-                          ),
-                        ),
-                        if (_hasTasksOnDate(date)) ...[
-                          SizedBox(height: 6),
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isSelected
-                                  ? Colors.white
-                                  : currentCategoryColor,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (isSelected
-                                          ? Colors.black
-                                          : currentCategoryColor)
-                                      .withOpacity(0.1),
-                                  blurRadius: 2,
-                                  offset: Offset(0, 1),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -2161,7 +2007,7 @@ class _HomePageState extends State<HomePage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Padding(
-                                padding: EdgeInsets.all(8),
+                                padding: const EdgeInsets.all(8),
                                 child: Text(
                                   'Due Date',
                                   style: GoogleFonts.poppins(
@@ -2175,6 +2021,7 @@ class _HomePageState extends State<HomePage> {
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.start,
                                   children: [
+                                    // Today Option
                                     Container(
                                       width: 100,
                                       child: _buildDateOption(
@@ -2191,6 +2038,7 @@ class _HomePageState extends State<HomePage> {
                                         }),
                                       ),
                                     ),
+                                    // Tomorrow Option
                                     Container(
                                       width: 100,
                                       child: _buildDateOption(
@@ -2204,92 +2052,85 @@ class _HomePageState extends State<HomePage> {
                                       ),
                                     ),
                                     Container(
-                                      width: 100,
-                                      child: InkWell(
-                                        onTap: () async {
-                                          final now = DateTime.now();
-                                          final currentDate = DateTime(
-                                              now.year, now.month, now.day);
-
-                                          final picked = await showDatePicker(
-                                            context: context,
-                                            initialDate: selectedDueDate
-                                                    .isBefore(currentDate)
-                                                ? currentDate
-                                                : selectedDueDate,
-                                            firstDate: currentDate,
-                                            lastDate: DateTime(
-                                                currentDate.year + 2, 12, 31),
-                                            builder: (context, child) {
-                                              return Theme(
-                                                data:
-                                                    Theme.of(context).copyWith(
-                                                  colorScheme: Theme.of(context)
-                                                      .colorScheme
-                                                      .copyWith(
-                                                        primary:
-                                                            currentCategoryColor,
-                                                      ),
-                                                ),
-                                                child: child!,
+                                        width: 100,
+                                        child: InkWell(
+                                            onTap: () async {
+                                              final DateTime? selectedDate =
+                                                  await showCustomDatePicker(
+                                                context: context,
+                                                initialDate:
+                                                    selectedDueDate, // Use the currently selected date
+                                                firstDate: DateTime
+                                                    .now(), // Prevent selecting past dates
+                                                lastDate: DateTime.now().add(
+                                                    const Duration(
+                                                        days:
+                                                            365)), // Allow up to 1 year ahead
+                                                accentColor:
+                                                    currentCategoryColor, // Use your category color
                                               );
-                                            },
-                                          );
 
-                                          if (picked != null) {
-                                            setState(() {
-                                              selectedDateType = 'custom';
-                                              selectedDueDate = picked;
-                                              if (selectedDueTime != null &&
-                                                  !isValidDueTime(picked,
-                                                      selectedDueTime!)) {
-                                                selectedDueTime = null;
+                                              if (selectedDate != null) {
+                                                setState(() {
+                                                  selectedDateType = 'custom';
+                                                  selectedDueDate =
+                                                      selectedDate;
+                                                  // Check if existing time is still valid with new date
+                                                  if (selectedDueTime != null &&
+                                                      !isValidDueTime(
+                                                          selectedDate,
+                                                          selectedDueTime!)) {
+                                                    selectedDueTime = null;
+                                                  }
+                                                });
                                               }
-                                            });
-                                          }
-                                        },
-                                        child: Container(
-                                          margin: EdgeInsets.all(8),
-                                          padding: EdgeInsets.symmetric(
-                                            vertical: 8,
-                                            horizontal: 12,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            border: Border.all(
-                                                color: Colors.grey[300]!),
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                            color: selectedDateType == 'custom'
-                                                ? currentCategoryColor
-                                                : Colors.transparent,
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(
-                                                Icons.calendar_today,
-                                                size: 16,
-                                                color:
-                                                    selectedDateType == 'custom'
-                                                        ? Colors.white
-                                                        : Colors.grey[600],
-                                              ),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                'Pick',
-                                                style: GoogleFonts.inter(
+                                            },
+                                            child: Container(
+                                                margin: const EdgeInsets.all(8),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  vertical: 8,
+                                                  horizontal: 12,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(
+                                                      color: Colors.grey[300]!),
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
                                                   color: selectedDateType ==
                                                           'custom'
-                                                      ? Colors.white
-                                                      : Colors.grey[600],
+                                                      ? currentCategoryColor
+                                                      : Colors.transparent,
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                                                child: Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.calendar_today,
+                                                        size: 16,
+                                                        color:
+                                                            selectedDateType ==
+                                                                    'custom'
+                                                                ? Colors.white
+                                                                : Colors
+                                                                    .grey[600],
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        'Pick',
+                                                        style:
+                                                            GoogleFonts.inter(
+                                                          color:
+                                                              selectedDateType ==
+                                                                      'custom'
+                                                                  ? Colors.white
+                                                                  : Colors.grey[
+                                                                      600],
+                                                        ),
+                                                      ),
+                                                    ]))))
                                   ],
                                 ),
                               ),
@@ -2351,16 +2192,16 @@ class _HomePageState extends State<HomePage> {
                                       )
                                     : null,
                                 onTap: () async {
-                                  final picked = await showTimePicker(
+                                  final pickedTime = await showTimePicker(
                                     context: context,
                                     initialTime: TimeOfDay.now(),
+                                    accentColor: currentCategoryColor,
                                   );
-
-                                  if (picked != null) {
+                                  if (pickedTime != null) {
                                     if (isValidDueTime(
-                                        selectedDueDate, picked)) {
+                                        selectedDueDate, pickedTime)) {
                                       setState(() {
-                                        selectedDueTime = picked;
+                                        selectedDueTime = pickedTime;
                                         showTimeError = false;
                                       });
                                     } else {
@@ -2482,38 +2323,6 @@ class _HomePageState extends State<HomePage> {
         },
       ),
     );
-  }
-
-// Update the date option builder for fixed width
-  Widget _buildDateOption(String text, bool isSelected, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: EdgeInsets.all(8),
-        padding: EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? currentCategoryColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? currentCategoryColor : Colors.grey[300]!,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            text,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.grey[600],
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ),
-    );
-  }
-
-  int _getDaysInMonth(DateTime date) {
-    return DateTime(date.year, date.month + 1, 0).day;
   }
 
   void showDailyAddTaskSheet(
@@ -2783,6 +2592,240 @@ class _HomePageState extends State<HomePage> {
         );
       },
     );
+  }
+
+  Future<TimeOfDay?> showTimePicker({
+    required BuildContext context,
+    required TimeOfDay initialTime,
+    required Color accentColor,
+  }) async {
+    return showModalBottomSheet(
+      context: context,
+      builder: (context) => TimePicker(
+        onTimeSelected: (TimeOfDay time) {
+          print('Selected time: ${time.format(context)}');
+        },
+      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+    );
+  }
+
+  Future<DateTime?> showCustomDatePicker({
+    required BuildContext context,
+    required DateTime initialDate,
+    DateTime? firstDate,
+    DateTime? lastDate,
+    required Color accentColor,
+  }) async {
+    // Set default values for firstDate and lastDate if not provided
+    firstDate ??= DateTime.now();
+    lastDate ??=
+        DateTime.now().add(const Duration(days: 365)); // One year from now
+
+    return showModalBottomSheet<DateTime>(
+      context: context,
+      builder: (context) => CustomDatePicker(
+        initialDate: initialDate,
+        firstDate: firstDate!,
+        lastDate: lastDate!,
+        accentColor: accentColor,
+        onDateSelected: (DateTime date) {
+          print('Selected date: ${date.toString()}');
+        },
+      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+    );
+  }
+
+  Widget _buildCalendar() {
+    final today = DateTime.now();
+    final daysInMonth = _getDaysInMonth(displayedMonth);
+
+    List<DateTime> orderedDates = [];
+
+    for (int i = (displayedMonth.year == today.year &&
+                displayedMonth.month == today.month)
+            ? today.day
+            : 1;
+        i <= daysInMonth;
+        i++) {
+      orderedDates.add(DateTime(displayedMonth.year, displayedMonth.month, i));
+    }
+
+    if (orderedDates.length < 30) {
+      final nextMonth = DateTime(displayedMonth.year, displayedMonth.month + 1);
+      final daysToAdd = 31 - orderedDates.length;
+
+      for (int i = 1; i <= daysToAdd; i++) {
+        orderedDates.add(DateTime(nextMonth.year, nextMonth.month, i));
+      }
+    }
+
+    orderedDates = orderedDates.take(31).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Container(
+            height: 100,
+            child: ListView.builder(
+              controller: _calendarScrollController,
+              scrollDirection: Axis.horizontal,
+              itemCount: orderedDates.length,
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              itemBuilder: (context, index) {
+                final date = orderedDates[index];
+                final isSelected = selectedDate.year == date.year &&
+                    selectedDate.month == date.month &&
+                    selectedDate.day == date.day;
+                final isToday = date.year == today.year &&
+                    date.month == today.month &&
+                    date.day == today.day;
+                final isNextMonth = date.month != displayedMonth.month;
+
+                return GestureDetector(
+                  onTap: () => setState(() => selectedDate = date),
+                  child: Container(
+                    width: 60,
+                    margin: EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? currentCategoryColor
+                          : isToday
+                              ? currentCategoryColor.withOpacity(0.1)
+                              : isNextMonth
+                                  ? Colors.grey[100]
+                                  : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        if (isSelected)
+                          BoxShadow(
+                            color: currentCategoryColor.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          )
+                        else if (isToday)
+                          BoxShadow(
+                            color: currentCategoryColor.withOpacity(0.15),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          )
+                        else
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          [
+                            'Mon',
+                            'Tue',
+                            'Wed',
+                            'Thu',
+                            'Fri',
+                            'Sat',
+                            'Sun'
+                          ][date.weekday - 1],
+                          style: GoogleFonts.inter(
+                            color: isSelected
+                                ? Colors.white.withOpacity(0.9)
+                                : isNextMonth
+                                    ? Colors.grey[400]
+                                    : Colors.grey[600],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          '${date.day}',
+                          style: GoogleFonts.poppins(
+                            color: isSelected
+                                ? Colors.white
+                                : isToday
+                                    ? currentCategoryColor
+                                    : isNextMonth
+                                        ? Colors.grey[400]
+                                        : Colors.black87,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            height: 1,
+                          ),
+                        ),
+                        if (_hasTasksOnDate(date)) ...[
+                          SizedBox(height: 6),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isSelected
+                                  ? Colors.white
+                                  : currentCategoryColor,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isSelected
+                                          ? Colors.black
+                                          : currentCategoryColor)
+                                      .withOpacity(0.1),
+                                  blurRadius: 2,
+                                  offset: Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+// Update the date option builder for fixed width
+  Widget _buildDateOption(String text, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: EdgeInsets.all(8),
+        padding: EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? currentCategoryColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? currentCategoryColor : Colors.grey[300]!,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.grey[600],
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+
+  int _getDaysInMonth(DateTime date) {
+    return DateTime(date.year, date.month + 1, 0).day;
   }
 }
 
