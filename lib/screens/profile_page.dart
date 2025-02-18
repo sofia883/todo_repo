@@ -5,7 +5,7 @@ import 'package:to_do_app/screens/edit_profile_screen.dart';
 
 class ProfilePage extends StatefulWidget {
   List<ScheduleTask> scheduledTasks;
-  List<QuickTask> quickTasks;
+  List<DailyTask> quickTasks;
 
   ProfilePage({
     Key? key,
@@ -48,6 +48,8 @@ class _ProfilePageState extends State<ProfilePage> {
           currentUser?.email ??
           'user@example.com';
     });
+
+    await _loadSavedImage(); // Load saved image
   }
 
   @override
@@ -129,19 +131,18 @@ class _ProfilePageState extends State<ProfilePage> {
     final currentUser = FirebaseAuth.instance.currentUser;
 
     if (currentUser != null) {
-      final savedImagePath =
+      String? imagePath =
           prefs.getString('profile_image_path_${currentUser.uid}');
-      if (savedImagePath != null) {
+      if (imagePath != null) {
         setState(() {
-          _profileImage = File(savedImagePath);
-          _imageUrl = null;
+          _profileImage = File(imagePath);
         });
       }
     }
   }
 
   Widget _buildTaskOverview(
-      List<ScheduleTask> scheduledTasks, List<QuickTask> quickTasks) {
+      List<ScheduleTask> scheduledTasks, List<DailyTask> quickTasks) {
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -227,22 +228,24 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _updateUserProfile() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await user.updateDisplayName(_nameController.text);
-        if (_isEditingEmail) {
-          await user.updateEmail(_emailController.text);
-        }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('No user logged in');
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Profile updated successfully')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating profile: $e')),
-      );
+    final prefs = await SharedPreferences.getInstance();
+
+    if (_nameController.text != user.displayName) {
+      await user.updateDisplayName(_nameController.text);
+      await prefs.setString('user_name', _nameController.text);
+    }
+
+    if (_emailController.text != user.email) {
+      await user.updateEmail(_emailController.text);
+      await prefs.setString('user_email', _emailController.text);
+    }
+
+    if (_profileImage != null) {
+      await prefs.setString(
+          'profile_image_path_${user.uid}', _profileImage!.path);
     }
   }
 
@@ -403,7 +406,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildTaskProgressBars(
-      List<ScheduleTask> scheduledTasks, List<QuickTask> quickTasks) {
+      List<ScheduleTask> scheduledTasks, List<DailyTask> quickTasks) {
     return Container(
       padding: EdgeInsets.all(16),
       child: Column(
@@ -769,12 +772,13 @@ class _ProfilePageState extends State<ProfilePage> {
       return Column(
         children: [
           GestureDetector(
-            onTap: () {
-              Navigator.pushNamed(context, '/login');
+            onTap: () async {
+              await AuthSyncService.handleAuthentication(
+                context,
+              );
             },
             child: Stack(
-              alignment: Alignment
-                  .bottomRight, // Position the add icon at the bottom right
+              alignment: Alignment.bottomRight,
               children: [
                 Container(
                   width: 120,
@@ -786,27 +790,31 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   child: Center(
                     child: Icon(
-                      Icons.account_circle, // Large user icon
+                      Icons.account_circle,
                       color: Colors.white70,
                       size: 80,
                     ),
                   ),
                 ),
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.blue, // Background color for add icon
-                  ),
-                  child: Icon(
-                    Icons.add_circle, // Small add icon
-                    color: Colors.white,
-                    size: 30,
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.blue,
+                    ),
+                    child: Icon(
+                      Icons.add_circle,
+                      color: Colors.white,
+                      size: 30,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          SizedBox(height: 8), // Add some spacing
+          SizedBox(height: 8),
           Text(
             "Not signed in?",
             style: TextStyle(
@@ -814,87 +822,93 @@ class _ProfilePageState extends State<ProfilePage> {
               color: Colors.white,
             ),
           ),
-          SizedBox(height: 4),
         ],
       );
     }
 
     // If user is signed in, show their profile picture
-    return Stack(
-      alignment: Alignment.bottomRight,
+    return Column(
       children: [
-        Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: _imageUrl != null
-                ? Image.network(_imageUrl!, fit: BoxFit.cover)
-                : Container(
-                    color: Colors.white,
-                    child: Icon(
-                      Icons.person,
-                      size: 60,
-                      color: Colors.blue.shade200,
-                    ),
-                  ),
-          ),
-        ),
-        GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => EditProfileScreen(
-                    currentName: _nameController.text,
-                    currentEmail: _emailController.text,
-                    currentImage: _profileImage,
-                  ),
-                ),
-              );
-            },
-            child: Container(
-              padding: EdgeInsets.all(8),
+        Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
               decoration: BoxDecoration(
-                color: Colors.white,
                 shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 5,
+                    color: Colors.black26,
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
                   ),
                 ],
               ),
-              child: Icon(
-                Icons.edit,
-                size: 20,
-                color: Colors.grey.shade600,
+              child: ClipOval(
+                child: _imageUrl != null
+                    ? Image.network(_imageUrl!, fit: BoxFit.cover)
+                    : Container(
+                        color: Colors.white,
+                        child: Icon(
+                          Icons.person,
+                          size: 60,
+                          color: Colors.blue.shade200,
+                        ),
+                      ),
               ),
-            )),
-        // ✅ Display User Name
+            ),
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditProfileScreen(
+                        currentName: _nameController.text,
+                        currentEmail: _emailController.text,
+                        currentImage: _profileImage,
+                      ),
+                    ),
+                  );
+
+                  if (result == true) {
+                    setState(() {
+                      _loadUserData(); // Reload user data after returning
+                      _loadSavedImage(); // Reload image after returning
+                    });
+                  }
+                },
+                child: Icon(
+                  Icons.edit,
+                  size: 20,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 8),
         Text(
           _nameController.text.isNotEmpty ? _nameController.text : "User Name",
           style: TextStyle(
-              fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         SizedBox(height: 4),
-
-        // ✅ Display Email Address
         Text(
           _emailController.text.isNotEmpty
               ? _emailController.text
               : "user@example.com",
-          style: TextStyle(fontSize: 16, color: Colors.white70),
+          style: TextStyle(
+            fontSize: 16,
+            color: Colors.white70,
+          ),
         ),
       ],
     );
@@ -938,7 +952,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
 class TaskProgressBars extends StatelessWidget {
   final List<ScheduleTask> scheduledTasks;
-  final List<QuickTask> quickTasks;
+  final List<DailyTask> quickTasks;
 
   const TaskProgressBars({
     Key? key,

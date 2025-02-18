@@ -1,15 +1,12 @@
-
-
-class QuickTask {
+class DailyTask {
   final String id;
-  final String userId; 
+  final String userId;
   final String title;
   final DateTime createdAt;
-  final List<QuickSubTask> subtasks;
+  final List<DailySubTask> subtasks;
   bool? isCompleted;
-  
 
-  QuickTask({
+  DailyTask({
     required this.id,
     required this.userId,
     required this.title,
@@ -29,28 +26,28 @@ class QuickTask {
     };
   }
 
-  factory QuickTask.fromJson(Map<String, dynamic> json) {
-    return QuickTask(
+  factory DailyTask.fromJson(Map<String, dynamic> json) {
+    return DailyTask(
       id: json['id'],
       userId: json['userId'] ?? '',
       title: json['title'],
       createdAt: DateTime.parse(json['createdAt']),
       subtasks: (json['subtasks'] as List)
-          .map((subtask) => QuickSubTask.fromJson(subtask))
+          .map((subtask) => DailySubTask.fromJson(subtask))
           .toList(),
       isCompleted: json['isCompleted'],
     );
   }
 
-  QuickTask copyWith({
+  DailyTask copyWith({
     String? id,
     String? userId,
     String? title,
     DateTime? createdAt,
-    List<QuickSubTask>? subtasks,
+    List<DailySubTask>? subtasks,
     bool? isCompleted,
   }) {
-    return QuickTask(
+    return DailyTask(
       id: id ?? this.id,
       userId: userId ?? this.userId,
       title: title ?? this.title,
@@ -61,12 +58,12 @@ class QuickTask {
   }
 }
 
-class QuickSubTask {
+class DailySubTask {
   final String id;
   final String title;
   bool isCompleted;
 
-  QuickSubTask({
+  DailySubTask({
     required this.id,
     required this.title,
     this.isCompleted = false,
@@ -80,20 +77,20 @@ class QuickSubTask {
     };
   }
 
-  factory QuickSubTask.fromJson(Map<String, dynamic> json) {
-    return QuickSubTask(
+  factory DailySubTask.fromJson(Map<String, dynamic> json) {
+    return DailySubTask(
       id: json['id'],
       title: json['title'],
       isCompleted: json['isCompleted'] ?? false,
     );
   }
 
-  QuickSubTask copyWith({
+  DailySubTask copyWith({
     String? id,
     String? title,
     bool? isCompleted,
   }) {
-    return QuickSubTask(
+    return DailySubTask(
       id: id ?? this.id,
       title: title ?? this.title,
       isCompleted: isCompleted ?? this.isCompleted,

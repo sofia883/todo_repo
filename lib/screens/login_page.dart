@@ -12,15 +12,24 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isPasswordVisible = false;
-
   Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       try {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        final userCredential =
+            await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
+
+        await FirebaseTaskService.syncGuestDataToUser(userCredential.user!.uid);
+
+        // Add auth success handling
+        if (mounted) {
+        await _handleAuthSuccess(context);
+
+        }
+
         if (mounted) {
           // Clear the navigation stack and go to welcome page
           Navigator.pushNamedAndRemoveUntil(
@@ -36,7 +45,6 @@ class _LoginPageState extends State<LoginPage> {
         if (mounted) {
           setState(() => _isLoading = false);
         }
-        // In your login handler
       }
     }
   }
@@ -60,6 +68,16 @@ class _LoginPageState extends State<LoginPage> {
       );
     }
   }
+Future<void> _handleAuthSuccess(BuildContext context) async {
+  try {
+    await AuthSyncService.handleAuthentication(context, isNewUser: false);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error syncing data: $e')),
+    );
+  }
+}
+
 
   @override
   build(BuildContext context) {

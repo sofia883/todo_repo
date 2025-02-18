@@ -24,7 +24,7 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _quickAddController = TextEditingController();
   final TextEditingController _quickAddSubtaskController =
       TextEditingController();
-  List<QuickTask> _quickTasks = [];
+  List<DailyTask> _quickTasks = [];
   StreamSubscription? _todoSubscription; // Add this
 
   List<ScheduleTask> _currentTasks = [];
@@ -756,7 +756,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildQuickTaskItem(QuickTask task, BuildContext context) {
+  Widget _buildQuickTaskItem(DailyTask task, BuildContext context) {
     String formatCreationTime(DateTime dateTime) {
       return 'Created at ${DateFormat('h:mm a').format(dateTime).toLowerCase()}';
     }
@@ -1102,6 +1102,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildScaffold(Widget mainContent) {
+    final overdueTasks = _getOverdueTasks();
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -1134,57 +1136,30 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // Three-dot menu on the right
-            PopupMenuButton<String>(
-              icon: const Icon(
-                Icons.more_vert,
-                color: Colors.white,
-                size: 28,
+            // Overdue tasks indicator on the right
+            if (overdueTasks.isNotEmpty)
+              GestureDetector(
+                onTap: () => _showOverdueTasksBottomSheet(overdueTasks),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.3),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Badge(
+                    label: Text(
+                      overdueTasks.length.toString(),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    backgroundColor: Colors.red,
+                    child: const Icon(
+                      Icons.warning_rounded,
+                      color: Colors.red,
+                      size: 28,
+                    ),
+                  ),
+                ),
               ),
-              onSelected: (value) {
-                if (value == 'logout') {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => LoginPage()),
-                  );
-                } else if (value == 'toggle_theme') {
-                  setState(() {
-                    isDarkMode = !isDarkMode;
-                  });
-                }
-                // Add more menu options here if needed
-              },
-              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                PopupMenuItem<String>(
-                  value: 'toggle_theme',
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.brightness_6,
-                        color: isDarkMode ? Colors.yellow : Colors.grey[700],
-                        size: 22,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(isDarkMode ? 'Light Mode' : 'Dark Mode'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem<String>(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.logout,
-                        color: Colors.grey[700],
-                        size: 22,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('Logout'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
@@ -1212,27 +1187,23 @@ class _HomePageState extends State<HomePage> {
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           if (isQuickAddMode) {
-            final result = showQuickAddTaskSheet(
+            final result = showDailyAddTaskSheet(
               context,
-              (QuickTask newTask) {
+              (DailyTask newTask) {
                 setState(() {
-                  // Add the new task to your list immediately
                   _quickTasks.add(newTask);
                 });
               },
             );
 
-            FirebaseTaskService
-                .getQuickTasksStream(); // Reload tasks to reflect newly added quick tasks.
+            FirebaseTaskService.getQuickTasksStream();
           } else {
             _showAddTaskDialog();
           }
         },
-        backgroundColor: currentCategoryColor ??
-            Theme.of(context)
-                .primaryColor, // Fallback to default if color is null.
-        child: Icon(
-          isQuickAddMode ? Icons.add : Icons.add,
+        backgroundColor: currentCategoryColor ?? Theme.of(context).primaryColor,
+        child: const Icon(
+          Icons.add,
           color: Colors.white,
         ),
       ),
@@ -1241,49 +1212,155 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildTaskTabs() {
     final upcomingTasks = _getTasksForSelectedDate();
-    final overdueTasks = _getOverdueTasks();
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            _buildTab(
-              'Upcoming (${upcomingTasks.length})',
-              !showMyTasksOnly && !isQuickAddMode,
-              () {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _buildTab(
+            'Upcoming (${upcomingTasks.length})',
+            !isQuickAddMode,
+            () {
+              setState(() {
+                isQuickAddMode = false;
+              });
+            },
+          ),
+          const SizedBox(width: 12),
+          _buildTab(
+            'Daily Tasks',
+            isQuickAddMode,
+            () {
+              setState(() {
+                isQuickAddMode = !isQuickAddMode;
+              });
+            },
+            icon: Icons.add_circle_outline,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> handleDelete(ScheduleTask todo) async {
+    try {
+      // Remove from local list first
+      setState(() {
+        todos.removeWhere((t) => t.id == todo.id);
+      });
+
+      // Close bottom sheet if it's the last overdue task
+      if (_getOverdueTasks().isEmpty) {
+        Navigator.pop(context);
+      }
+
+      await FirebaseTaskService.deleteScheduledTask(todo.id);
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Task deleted'),
+          action: SnackBarAction(
+            label: 'UNDO',
+            onPressed: () async {
+              try {
+                await FirebaseTaskService.addScheduledTask(todo);
                 setState(() {
-                  showMyTasksOnly = false;
-                  isQuickAddMode = false;
+                  todos.add(todo);
                 });
-              },
-            ),
-            const SizedBox(width: 12),
-            _buildTab(
-              'Overdue (${overdueTasks.length})',
-              showMyTasksOnly && !isQuickAddMode,
-              () {
-                setState(() {
-                  showMyTasksOnly = true;
-                  isQuickAddMode = false;
-                });
-              },
-            ),
-            const SizedBox(width: 12),
-            _buildTab(
-              'Quick Add',
-              isQuickAddMode,
-              () {
-                setState(() {
-                  isQuickAddMode = !isQuickAddMode;
-                  showMyTasksOnly = false;
-                });
-              },
-              icon: Icons.add_circle_outline,
-            ),
-          ],
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to restore task'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+          ),
+          duration: const Duration(seconds: 5),
         ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to delete task'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+// Modified bottom sheet to update counter
+  void _showOverdueTasksBottomSheet(List<ScheduleTask> overdueTasks) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          // Get fresh count of overdue tasks
+          final currentOverdueTasks = _getOverdueTasks();
+
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.7,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_rounded, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Overdue Tasks (${currentOverdueTasks.length})',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: currentOverdueTasks.length,
+                    itemBuilder: (context, index) {
+                      final todo = currentOverdueTasks[index];
+                      return Dismissible(
+                        key: ValueKey(todo.id),
+                        onDismissed: (_) async {
+                          await handleDelete(todo);
+                          setState(() {}); // Update the bottom sheet UI
+                        },
+                        // ... rest of your Dismissible implementation
+                        child: _buildTaskItem(todo, true),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1296,24 +1373,11 @@ class _HomePageState extends State<HomePage> {
   }) {
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 5,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1378,7 +1442,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (isQuickAddMode) {
-      return StreamBuilder<List<QuickTask>>(
+      return StreamBuilder<List<DailyTask>>(
         stream: FirebaseTaskService.getQuickTasksStream(),
         initialData: _quickTasks, // Use cached data initially
         builder: (context, snapshot) {
@@ -1416,7 +1480,7 @@ class _HomePageState extends State<HomePage> {
 
           return ListView.builder(
             key: ValueKey(
-                'quick-tasks-${DateTime.now().millisecondsSinceEpoch}'),
+                'daily-tasks-${DateTime.now().millisecondsSinceEpoch}'),
             shrinkWrap: true,
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -2452,17 +2516,17 @@ class _HomePageState extends State<HomePage> {
     return DateTime(date.year, date.month + 1, 0).day;
   }
 
-  void showQuickAddTaskSheet(
-      BuildContext context, Function(QuickTask) onTaskAdded) {
+  void showDailyAddTaskSheet(
+      BuildContext context, Function(DailyTask) onTaskAdded) {
     final taskTitleController = TextEditingController();
     final subtaskController = TextEditingController();
-    final List<QuickSubTask> subtasks = [];
+    final List<DailySubTask> subtasks = [];
     bool isLoading = false;
 
     void addSubtask() {
       if (subtaskController.text.trim().isNotEmpty) {
         subtasks.add(
-          QuickSubTask(
+          DailySubTask(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
             title: subtaskController.text.trim(),
           ),
@@ -2500,7 +2564,7 @@ class _HomePageState extends State<HomePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Add Quick Task',
+                          'Add Daily Task',
                           style:
                               Theme.of(context).textTheme.titleLarge?.copyWith(
                                     fontWeight: FontWeight.bold,
@@ -2668,7 +2732,7 @@ class _HomePageState extends State<HomePage> {
                                 try {
                                   // Check network connectivity
 
-                                  final newTask = QuickTask(
+                                  final newTask = DailyTask(
                                     id: DateTime.now()
                                         .millisecondsSinceEpoch
                                         .toString(),
@@ -2851,4 +2915,212 @@ class _MonthYearSelectorState extends State<MonthYearSelector> {
       ),
     );
   }
+}
+
+class ModernTimePicker extends StatefulWidget {
+  final DateTime? initialTime;
+  final Function(DateTime) onTimeSelected;
+  final DateTime? minTime;
+
+  const ModernTimePicker({
+    Key? key,
+    this.initialTime,
+    required this.onTimeSelected,
+    this.minTime,
+  }) : super(key: key);
+
+  @override
+  _ModernTimePickerState createState() => _ModernTimePickerState();
+}
+
+class _ModernTimePickerState extends State<ModernTimePicker> {
+  late FixedExtentScrollController _hourController;
+  late FixedExtentScrollController _minuteController;
+  late DateTime _selectedTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTime = widget.initialTime ?? DateTime.now();
+    _hourController = FixedExtentScrollController(
+      initialItem: _selectedTime.hour,
+    );
+    _minuteController = FixedExtentScrollController(
+      initialItem: _selectedTime.minute ~/ 5,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 300,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.shade200),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.inter(
+                      color: Colors.grey[600],
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                Text(
+                  'Set Time',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    widget.onTimeSelected(_selectedTime);
+                    Navigator.pop(context);
+                  },
+                  child: Text(
+                    'Done',
+                    style: GoogleFonts.inter(
+                      color: Theme.of(context).primaryColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Time Picker Wheels
+          Expanded(
+            child: Row(
+              children: [
+                _buildTimePicker(
+                  controller: _hourController,
+                  items: List.generate(24, (index) => index),
+                  onChanged: (int value) {
+                    setState(() {
+                      _selectedTime = DateTime(
+                        _selectedTime.year,
+                        _selectedTime.month,
+                        _selectedTime.day,
+                        value,
+                        _selectedTime.minute,
+                      );
+                    });
+                  },
+                  formatValue: (value) => value.toString().padLeft(2, '0'),
+                ),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    ':',
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                _buildTimePicker(
+                  controller: _minuteController,
+                  items: List.generate(12, (index) => index * 5),
+                  onChanged: (int value) {
+                    setState(() {
+                      _selectedTime = DateTime(
+                        _selectedTime.year,
+                        _selectedTime.month,
+                        _selectedTime.day,
+                        _selectedTime.hour,
+                        value,
+                      );
+                    });
+                  },
+                  formatValue: (value) => value.toString().padLeft(2, '0'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimePicker({
+    required FixedExtentScrollController controller,
+    required List<int> items,
+    required Function(int) onChanged,
+    required String Function(int) formatValue,
+  }) {
+    return Expanded(
+      child: ListWheelScrollView.useDelegate(
+        controller: controller,
+        itemExtent: 50,
+        perspective: 0.005,
+        diameterRatio: 1.2,
+        physics: FixedExtentScrollPhysics(),
+        childDelegate: ListWheelChildBuilderDelegate(
+          childCount: items.length,
+          builder: (context, index) {
+            return Container(
+              height: 50,
+              alignment: Alignment.center,
+              child: Text(
+                formatValue(items[index]),
+                style: GoogleFonts.poppins(
+                  fontSize: 22,
+                  fontWeight: controller.selectedItem == index
+                      ? FontWeight.w600
+                      : FontWeight.normal,
+                  color: controller.selectedItem == index
+                      ? Colors.black
+                      : Colors.grey[400],
+                ),
+              ),
+            );
+          },
+        ),
+        onSelectedItemChanged: (index) => onChanged(items[index]),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _hourController.dispose();
+    _minuteController.dispose();
+    super.dispose();
+  }
+}
+
+// Custom Bottom Sheet to show the time picker
+void showModernTimePicker(
+  BuildContext context, {
+  required Function(DateTime) onTimeSelected,
+  DateTime? initialTime,
+  DateTime? minTime,
+}) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (context) => ModernTimePicker(
+      initialTime: initialTime,
+      onTimeSelected: onTimeSelected,
+      minTime: minTime,
+    ),
+  );
 }

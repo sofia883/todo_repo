@@ -14,6 +14,7 @@ class _SignupPageState extends State<SignupPage> {
   bool _isLoading = false;
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
+
   Future<void> _handleSignup() async {
     if (_formKey.currentState!.validate()) {
       if (_passwordController.text != _confirmPasswordController.text) {
@@ -31,11 +32,15 @@ class _SignupPageState extends State<SignupPage> {
           password: _passwordController.text.trim(),
         );
 
-        // Update display name
-        await userCredential.user
-            ?.updateDisplayName(_nameController.text.trim());
-        await userCredential.user
-            ?.reload(); // Ensure update reflects immediately
+        await userCredential.user?.updateDisplayName(_nameController.text.trim());
+        await userCredential.user?.reload();
+        
+        await FirebaseTaskService.syncGuestDataToUser(userCredential.user!.uid);
+
+        // Add auth success handling
+        if (mounted) {
+await _handleAuthSuccess(context);
+        }
 
         if (mounted) {
           Navigator.pushNamedAndRemoveUntil(
@@ -57,7 +62,15 @@ class _SignupPageState extends State<SignupPage> {
       }
     }
   }
-
+Future<void> _handleAuthSuccess(BuildContext context) async {
+  try {
+    await AuthSyncService.handleAuthentication(context, isNewUser: true);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error syncing data: $e')),
+    );
+  }
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(

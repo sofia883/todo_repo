@@ -44,13 +44,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+
     if (_isGuestUser) {
-      final prefs = await SharedPreferences.getInstance();
       final guestId = prefs.getString('guest_user_id') ?? 'guest';
       _nameController.text =
           prefs.getString('guest_name_$guestId') ?? widget.currentName;
       _emailController.text =
           prefs.getString('guest_email_$guestId') ?? widget.currentEmail;
+
       final savedImagePath = prefs.getString('guest_profile_image_$guestId');
       if (savedImagePath != null) {
         setState(() => _selectedImage = File(savedImagePath));
@@ -58,7 +60,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } else {
       _nameController.text = widget.currentName;
       _emailController.text = widget.currentEmail;
-      _selectedImage = widget.currentImage;
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final savedImagePath =
+            prefs.getString('profile_image_path_${user.uid}');
+        if (savedImagePath != null) {
+          setState(() => _selectedImage = File(savedImagePath));
+        }
+      }
     }
   }
 
@@ -76,7 +86,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Profile updated successfully')),
       );
-      Navigator.pop(context, true);
+
+      Navigator.pop(context, true); // Return true when profile is updated
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error updating profile: $e')),

@@ -34,7 +34,7 @@ class FirebaseTaskService {
 
   // Change to BehaviorSubject
   static final _quickTasksController =
-      BehaviorSubject<List<QuickTask>>.seeded([]);
+      BehaviorSubject<List<DailyTask>>.seeded([]);
   static final _scheduledTasksController =
       BehaviorSubject<List<ScheduleTask>>.seeded([]);
 
@@ -71,7 +71,7 @@ class FirebaseTaskService {
     }
   }
 
-  static Stream<List<QuickTask>> getQuickTasksStream() {
+  static Stream<List<DailyTask>> getQuickTasksStream() {
     if (!_isAuthenticated) {
       final localTasks = LocalStorageService.getQuickTasks();
       _quickTasksController.add(localTasks);
@@ -86,7 +86,7 @@ class FirebaseTaskService {
         final tasks = snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
           data['id'] = doc.id;
-          return QuickTask.fromJson(data);
+          return DailyTask.fromJson(data);
         }).toList();
 
         // Add to behavior subject
@@ -139,7 +139,7 @@ class FirebaseTaskService {
     }
   }
 
-  static Future<void> updateQuickTask(QuickTask task) async {
+  static Future<void> updateQuickTask(DailyTask task) async {
     try {
       final userId = await LocalStorageService.getCurrentUserId();
       final updatedTask = task.copyWith(
@@ -296,7 +296,7 @@ class FirebaseTaskService {
     }
   }
 
-  static Future<void> addQuickTask(QuickTask task) async {
+  static Future<void> addQuickTask(DailyTask task) async {
     try {
       final userId = await LocalStorageService.getCurrentUserId();
       final taskWithUserId = task.copyWith(
@@ -563,111 +563,56 @@ class FirebaseTaskService {
       throw Exception('Failed to delete user data and account: $e');
     }
   }
- static Future<String?> uploadProfileImage(File imageFile) async {
-    if (!_isAuthenticated || !_isOnline) {
-      return await LocalStorageService.saveProfileImage(imageFile);
-    }
 
+  static Future<void> syncGuestDataToUser(String newUserId) async {
     try {
-      // Create storage reference with proper path structure
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('users') // Add users folder
-          .child(_userId) // Add user-specific folder
-          .child('profile_image.jpg'); // Fixed filename
+      final guestUserId = await LocalStorageService.getCurrentUserId();
+      final guestScheduledTasks = LocalStorageService.getScheduledTasks();
+      final guestQuickTasks = LocalStorageService.getQuickTasks();
 
-      // Compress image before upload
-      final compressedFile = await compressImage(imageFile);
-      
-      // Create metadata
-      final metadata = SettableMetadata(
-        contentType: 'image/jpeg',
-        customMetadata: {
-          'uploadedBy': _userId,
-          'timestamp': DateTime.now().toIso8601String(),
-        },
-      );
-
-      // Upload to Firebase with metadata
-      final uploadTask = storageRef.putFile(compressedFile, metadata);
-      
-      // Monitor upload progress if needed
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        print('Upload progress: ${snapshot.bytesTransferred}/${snapshot.totalBytes}');
+      // Save data locally for new user first
+      await LocalStorageService.saveUserData(newUserId, {
+        'scheduled_tasks': guestScheduledTasks,
+        'quick_tasks': guestQuickTasks,
       });
 
-      // Wait for upload to complete
-      await uploadTask;
-      
-      // Get download URL
-      final downloadUrl = await storageRef.getDownloadURL();
+      if (_isOnline) {
+        final batch = _firestore.batch();
 
-      // Save locally for offline access
-      await LocalStorageService.saveProfileImage(imageFile);
+        // Transfer scheduled tasks
+        for (var task in guestScheduledTasks) {
+          final newTask = task.copyWith(
+            userId: newUserId,
+          );
+          final docRef = _firestore
+              .collection('users')
+              .doc(newUserId)
+              .collection('scheduled_tasks')
+              .doc(task.id);
+          batch.set(docRef, newTask.toJson());
+        }
 
-      return downloadUrl;
-    } on FirebaseException catch (e) {
-      print('Firebase Storage Error: ${e.code} - ${e.message}');
-      
-      // Handle specific error cases
-      switch (e.code) {
-        case 'object-not-found':
-          throw Exception('Storage path not found. Please check storage rules.');
-        case 'unauthorized':
-          throw Exception('Not authorized to upload. Please check storage rules.');
-        case 'canceled':
-          throw Exception('Upload was cancelled.');
-        default:
-          throw Exception('Failed to upload image: ${e.message}');
+        // Transfer quick tasks
+        for (var task in guestQuickTasks) {
+          final newTask = task.copyWith(
+            userId: newUserId,
+          );
+          final docRef = _firestore
+              .collection('users')
+              .doc(newUserId)
+              .collection('quick_tasks')
+              .doc(task.id);
+          batch.set(docRef, newTask.toJson());
+        }
+
+        await batch.commit();
       }
+
+      // Clear old guest data
+      await LocalStorageService.clearGuestData(guestUserId);
     } catch (e) {
-      print('Failed to upload profile image: $e');
-      throw Exception('Failed to upload profile image: $e');
-    }
-  }
-
-  static Future<File> compressImage(File file) async {
-    final bytes = await file.readAsBytes();
-    final image = img_lib.decodeImage(bytes);
-    
-    if (image == null) throw Exception('Failed to decode image');
-
-    // Compress image to reasonable size (e.g., max 800x800)
-    final resized = image.width > 800 || image.height > 800
-        ? img_lib.copyResize(
-            image,
-            width: image.width > image.height ? 800 : null,
-            height: image.height >= image.width ? 800 : null,
-          )
-        : image;
-
-    // Encode as JPG with quality 85
-    final compressed = img_lib.encodeJpg(resized, quality: 85);
-    
-    // Save compressed image to temporary file
-    final tempPath = file.path.replaceAll('.jpg', '_compressed.jpg');
-    final compressedFile = File(tempPath);
-    await compressedFile.writeAsBytes(compressed);
-    
-    return compressedFile;
-  }
-
-  static Future<String?> getProfileImageUrl() async {
-    if (!_isAuthenticated || !_isOnline) {
-      // Return local path if not authenticated or offline
-      return await LocalStorageService.getProfileImage();
-    }
-
-    try {
-      // Try to get Firebase Storage URL
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('profile_images')
-          .child('${_userId}.jpg');
-      return await storageRef.getDownloadURL();
-    } catch (e) {
-      // Fall back to local storage if Firebase fails
-      return await LocalStorageService.getProfileImage();
+      print('Failed to sync guest data: $e');
+      throw Exception('Failed to sync guest data: $e');
     }
   }
 
@@ -724,20 +669,20 @@ class LocalStorageService {
   }
 
   // Save quick tasks
-  static Future<void> saveQuickTasks(List<QuickTask> tasks) async {
+  static Future<void> saveQuickTasks(List<DailyTask> tasks) async {
     final key = '${QUICK_TASKS_KEY}_${await getCurrentUserId()}';
     final tasksJson = tasks.map((task) => task.toJson()).toList();
     await _prefs.setString(key, jsonEncode(tasksJson));
   }
 
   // Get quick tasks
-  static List<QuickTask> getQuickTasks() {
+  static List<DailyTask> getQuickTasks() {
     final userId = _prefs.getString(LOCAL_USER_ID_KEY) ?? '';
     final key = '${QUICK_TASKS_KEY}_$userId';
     final tasksString = _prefs.getString(key);
     if (tasksString == null) return [];
     final tasksList = jsonDecode(tasksString) as List;
-    return tasksList.map((task) => QuickTask.fromJson(task)).toList();
+    return tasksList.map((task) => DailyTask.fromJson(task)).toList();
   }
 
   static Future<void> clear() async {
@@ -800,6 +745,168 @@ class LocalStorageService {
       await _prefs.remove('${PROFILE_IMAGE_KEY}_$userId');
     } catch (e) {
       print('Failed to delete profile image: $e');
+    }
+  }
+
+  static Future<void> saveUserData(
+      String userId, Map<String, dynamic> data) async {
+    try {
+      final scheduledTasks = data['scheduled_tasks'] as List<ScheduleTask>;
+      final quickTasks = data['quick_tasks'] as List<DailyTask>;
+
+      // Save with user-specific keys
+      await _prefs.setString('${SCHEDULED_TASKS_KEY}_$userId',
+          jsonEncode(scheduledTasks.map((t) => t.toJson()).toList()));
+
+      await _prefs.setString('${QUICK_TASKS_KEY}_$userId',
+          jsonEncode(quickTasks.map((t) => t.toJson()).toList()));
+
+      // Update current user ID
+      await _prefs.setString(LOCAL_USER_ID_KEY, userId);
+    } catch (e) {
+      print('Failed to save user data locally: $e');
+      throw Exception('Failed to save user data locally: $e');
+    }
+  }
+
+  static Future<void> clearGuestData(String guestUserId) async {
+    await _prefs.remove('${SCHEDULED_TASKS_KEY}_$guestUserId');
+    await _prefs.remove('${QUICK_TASKS_KEY}_$guestUserId');
+    await _prefs.remove('${PROFILE_IMAGE_KEY}_$guestUserId');
+  }
+
+  static Future<Map<String, dynamic>> getUserData(String userId) async {
+    final scheduledTasksJson =
+        _prefs.getString('${SCHEDULED_TASKS_KEY}_$userId');
+    final quickTasksJson = _prefs.getString('${QUICK_TASKS_KEY}_$userId');
+
+    return {
+      'scheduled_tasks': scheduledTasksJson != null
+          ? (jsonDecode(scheduledTasksJson) as List)
+              .map((t) => ScheduleTask.fromJson(t))
+              .toList()
+          : [],
+      'quick_tasks': quickTasksJson != null
+          ? (jsonDecode(quickTasksJson) as List)
+              .map((t) => DailyTask.fromJson(t))
+              .toList()
+          : [],
+    };
+  }
+}
+
+class AuthSyncService {
+  static bool _isSyncing = false;
+
+  static Future<void> syncLocalDataWithFirebase(
+    List<ScheduleTask> localScheduledTasks,
+    List<DailyTask> localQuickTasks,
+  ) async {
+    if (_isSyncing) return; // Prevent multiple syncs
+
+    try {
+      _isSyncing = true;
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Get existing Firebase data using stream
+      final existingScheduledTasks =
+          await FirebaseTaskService.getScheduledTasksStream().first;
+      final existingQuickTasks =
+          await FirebaseTaskService.getQuickTasksStream().first;
+
+      // Merge local and Firebase data
+      final mergedScheduledTasks = _mergeTasks(
+        localScheduledTasks,
+        existingScheduledTasks,
+      );
+      final mergedQuickTasks = _mergeTasks(
+        localQuickTasks,
+        existingQuickTasks,
+      );
+
+      // Upload merged data to Firebase
+      for (var task in mergedScheduledTasks) {
+        await FirebaseTaskService.addScheduledTask(task);
+      }
+
+      for (var task in mergedQuickTasks) {
+        await FirebaseTaskService.addQuickTask(task);
+      }
+
+      // Clear local data after successful sync
+      await clearLocalData();
+    } catch (e) {
+      throw Exception('Failed to sync data: $e');
+    } finally {
+      _isSyncing = false;
+    }
+  }
+
+  static List<T> _mergeTasks<T>(List<T> localTasks, List<T> firebaseTasks) {
+    final Set<T> mergedSet = {...localTasks, ...firebaseTasks};
+    return mergedSet.toList();
+  }
+
+  // Made public for external access
+  static Future<void> clearLocalData() async {
+    await LocalStorageService.clear();
+  }
+
+  static Future<void> handleAuthentication(
+    BuildContext context, {
+    bool isNewUser = false,
+  }) async {
+    if (isNewUser) {
+      await clearLocalData();
+      return;
+    }
+
+    // Add delay before checking and showing dialog
+    await Future.delayed(Duration(seconds: 2));
+
+    if (!context.mounted) return;
+
+    // Check if there's any local data to sync
+    final localScheduledTasks = LocalStorageService.getScheduledTasks();
+    final localQuickTasks = LocalStorageService.getQuickTasks();
+
+    if (localScheduledTasks.isEmpty && localQuickTasks.isEmpty) {
+      await clearLocalData();
+      return;
+    }
+
+    // Show dialog to user
+    final decision = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Sync Local Data'),
+          content: Text(
+            'Would you like to sync your existing tasks with your account?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('No'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('Yes'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (decision == true) {
+      await syncLocalDataWithFirebase(
+        localScheduledTasks,
+        localQuickTasks,
+      );
+    } else {
+      await clearLocalData();
     }
   }
 }
